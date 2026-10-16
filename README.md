@@ -3,58 +3,143 @@
 
 Fork of **[decolua/9router](https://github.com/decolua/9router)** (MIT).
 
-## 一句话 / In one line
+---
 
-**网关是搬运工，不是爹。用户知道自己在干什么，网关要做的只是尊重用户的决定、把请求转发出去。**
+## 中文
 
-**A gateway is a mover, not a parent. The user knows what they are doing — the
-gateway's only job is to respect that decision and forward the request.**
+### 一句话
 
-## 上游做了什么 / What upstream does
+**网关是搬运工，不是爹。用户知道自己在干什么——网关只负责尊重用户的决定，把请求原样转发出去。**
 
-你的请求就是包裹。上游网关偏要当"爹"，投递前先拆开、按自己的表改一遍：
+### 上游网关做了什么
 
-- 你说 `reasoning_effort: "max"` → 模型 ID 不在它的表里，这张纸条被**扔掉**
-- 你说 `max` → 被改成 `high`（它的表认为这样"更好"）
-- 你说 `model(high)` → 后缀被**删掉**，或换成你没写过的厂商格式
-- 你什么都没说 → 它**塞进**一张自己写的思考设置
+上游网关的源码里硬编码了一份**模型清单**：逐个列出哪些模型 ID 有什么特性（比如“是否支持思考”“支持哪种思考参数格式”）。每次请求进来，网关都拿你的模型 ID 去这份清单里查，然后按查到的结果修改你的思考参数：
 
-Your request is the package. Upstream plays the parent: it opens the package and
-rewrites it by its own table — drops your `reasoning_effort` on unknown models,
-clamps `max` to `high`, deletes or rewrites your `model(high)` suffix, and injects
-its own thinking default when you sent none.
+- 你设了 `reasoning_effort: "max"` → 你的模型 ID 不在清单里，这个参数被直接删掉
+- 你设了 `max` → 被改成 `high`，因为清单里给这个模型标注的是“最高只支持 high”
+- 你用了 `model(high)` 后缀 → 后缀被删掉，或被改写成清单里规定的格式
+- 你什么都没设 → 它按清单里的默认值，自己加一个思考设置
 
-## 本 fork 做什么 / What this fork does
+### 为什么这是错的
 
-不拆包、不改字、不替你操心。**思考参数原样送达上游。**
+根本原因是**硬编码模型清单**——这是糟糕的行为。网关不应该存储任何模型的特性：
 
-No opening, no rewriting, no worrying on your behalf. Thinking parameters reach
-the upstream exactly as your client sent them.
+- **清单永远滞后。** 新模型不断出现，清单里没有的模型，参数直接被丢掉。你的模型只是新了一点，就被当成“不支持思考”。
+- **模型特性不属于模型名。** 同一个模型 ID，在不同厂商、不同部署上支持的参数并不一样。网关凭模型名查清单猜能力，猜错了，被改的就是你的请求。
+- **网关无法知道你的部署。** 你连的是哪个端点、它支持什么参数，只有你自己清楚。网关存一份“能力清单”，等于用一个必然过时的假设替你做决定。
 
-| | 上游 Upstream | 本 fork This fork |
+### 后果
+
+网关擅自改参数，后果全部由用户承担：
+
+- **模型行为与预期不符。** 你要的是 `max` 的思考深度，实际发出去的是 `high`，甚至什么都没有；不认识的模型还会被直接当成“不思考”。回答的深度、质量和稳定性都不是你调好的那个样子——你以为在调 A，实际跑的是 B。
+- **浪费用户的 token。** 两个方向都在烧钱：思考深度不够，回答变浅变错，你只好重问、换模型、反复试——每一轮都是你付钱；反过来，你故意不设置（想省 token），它却塞进默认的思考设置，让你为根本没要过的思考付费。
+- **出了问题查不到原因。** 网关改了什么，日志里看不到。你以为是自己的 prompt 有问题，其实是参数在网关里就被改掉了。
+
+### 本 fork 做了什么
+
+只转发，不修改。**思考参数原样送到上游，一个字都不动。**
+
+| | 上游 | 本 fork |
 |---|---|---|
 | 思考参数 | 拆包改写 | **原封不动** |
 | 未知模型 ID | `reasoning_effort` 被丢弃 | **保留** |
-| 客户端没传 | 塞入网关默认值 | **什么都不加** |
+| 客户端没传 | 网关注入默认值 | **什么都不加** |
 | `model(high)` 后缀 | 删除或改写 | **按客户端自己的字段写回** |
 | 开发服务器 | 热加载 | **关闭热加载** |
 
-## 原则 / Principle
+### 原则
 
 > **以客户端为准**：客户端没说的，网关不说；客户端说了的，网关原样说。
 
-上游拒绝参数时，原样收到上游报错——**你的配置你负责，网关不替你掩盖，也不替你"修正"**。
-If the upstream rejects a parameter, the error reaches you verbatim. Your config,
-your responsibility — the gateway neither hides it nor "corrects" it.
+如果上游拒绝了你的参数，你就原样收到上游的报错——你的配置你自己负责，网关不替你掩盖，也不替你“修正”。
 
-其余（路由、回退、省 token、多账号、面板）均为上游成果，未改动。
-Everything else — routing, fallback, token savers, multi-account, dashboard — is upstream work.
+其余功能（路由、回退、省 token、多账号、面板）都是上游的成果，没有改动。
 
 - 基于上游 **v0.5.104**；同步：`git fetch upstream && git merge upstream/master`
-- License: MIT (see [LICENSE](LICENSE)). All credit to [decolua](https://github.com/decolua) and contributors.
+- 许可：MIT（见 [LICENSE](LICENSE)）。原项目的全部功劳属于 [decolua](https://github.com/decolua) 及贡献者们。
 
 ---
 
+## English
+
+### In one line
+
+**A gateway is a mover, not a parent. The user knows what they are doing — the gateway's only job is to respect that decision and forward the request untouched.**
+
+### What the upstream gateway does
+
+The upstream gateway hardcodes a **model list** in its source code: it lists model
+IDs one by one, together with their characteristics (for example, "supports
+thinking" or "which thinking parameter format it takes"). On every request, the
+gateway looks your model ID up in that list and rewrites your thinking parameters
+according to what it finds:
+
+- You set `reasoning_effort: "max"` → your model ID is not in the list, so the parameter is deleted
+- You set `max` → rewritten to `high`, because the list marks this model as "supports at most high"
+- You use a `model(high)` suffix → the suffix is deleted, or replaced with the format the list prescribes
+- You set nothing → it adds a thinking setting of its own, using the default from the list
+
+### Why this is wrong
+
+The root cause is the **hardcoded model list** — a bad practice. A gateway should
+not store any model characteristics at all:
+
+- **The list is always out of date.** New models ship all the time; for any model
+  not in the list, parameters are simply dropped. Your model is merely newer, and
+  it gets treated as "does not support thinking".
+- **Model characteristics do not belong to the model name.** The same model ID may
+  support different parameters on different vendors and deployments. The gateway
+  guesses capabilities from the name — and when the guess is wrong, it is your
+  request that gets rewritten.
+- **The gateway cannot know your deployment.** Which endpoint you use and what it
+  accepts is something only you know. A stored "capability list" means the gateway
+  makes decisions for you based on an assumption that is guaranteed to go stale.
+
+### The consequence
+
+The gateway rewrites your parameters — and the user bears every consequence:
+
+- **The model does not behave the way you configured it.** You asked for `max`
+  depth; `high` goes out, or nothing at all — and an unknown model is simply
+  treated as "no thinking". The depth, quality and stability are not what you
+  tuned: you think you are driving A, but B is running.
+- **Your tokens are wasted — in both directions.** Not enough depth means shallow
+  or wrong answers, so you re-ask, switch models, and retry — every round billed
+  to you. And when you deliberately set nothing (to save tokens), it injects a
+  default thinking setting, so you pay for thinking you never asked for.
+- **You cannot even find out why.** What the gateway changed is invisible in the
+  logs. You blame your own prompt, when in fact the parameters were rewritten
+  inside the gateway.
+
+### What this fork does
+
+It only forwards; it never rewrites. **Thinking parameters reach the upstream
+exactly as your client sent them — not one character changed.**
+
+| | Upstream | This fork |
+|---|---|---|
+| Thinking parameters | opened and rewritten | **untouched** |
+| Unknown model ID | `reasoning_effort` dropped | **preserved** |
+| Client sent nothing | gateway default injected | **nothing added** |
+| `model(high)` suffix | deleted or rewritten | **written back in the client's own field** |
+| Dev server | hot reload | **hot reload disabled** |
+
+### Principle
+
+> **The client is authoritative**: what it does not send, the gateway does not
+> send; what it sends, the gateway sends as-is.
+
+If the upstream rejects your parameters, you receive the upstream error verbatim —
+your config is your own responsibility; the gateway neither hides it nor "corrects" it.
+
+Everything else (routing, fallback, token savers, multi-account, dashboard) is
+upstream work and has not been changed.
+
+- Based on upstream **v0.5.104**; sync with `git fetch upstream && git merge upstream/master`
+- License: MIT (see [LICENSE](LICENSE)). All credit goes to [decolua](https://github.com/decolua) and contributors.
+
+---
 <div align="center">
 
 <table>
