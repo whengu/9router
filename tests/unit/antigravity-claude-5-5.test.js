@@ -26,19 +26,22 @@ describe("Antigravity Claude 5.5 models (#4555, #4548)", () => {
     expect(ids).toContain("claude-opus-5-5");
 
     const sonnet = agModels.find((m) => m.id === "claude-sonnet-5-5");
-    expect(sonnet?.upstreamModelId).toBe("claude-sonnet-5-5-high(high)");
+    // Default catalog ids carry no pre-baked thinking level: the gateway must
+    // not decide the effort for a model the client asked for by name (T6).
+    // Users who want a forced level write it themselves: model(level).
+    expect(sonnet?.upstreamModelId).toBe("claude-sonnet-5-5");
     const opus = agModels.find((m) => m.id === "claude-opus-5-5");
-    expect(opus?.upstreamModelId).toBe("claude-opus-5-5-high(high)");
+    expect(opus?.upstreamModelId).toBe("claude-opus-5-5");
   });
 
   it("resolves upstream model ID with thinking stripped for Google Cloud Code API", () => {
     const upstreamSonnet = getModelUpstreamId("ag", "claude-sonnet-5-5");
-    expect(upstreamSonnet).toBe("claude-sonnet-5-5-high(high)");
-    expect(stripThinkingSuffix(upstreamSonnet)).toBe("claude-sonnet-5-5-high");
+    expect(upstreamSonnet).toBe("claude-sonnet-5-5");
+    expect(stripThinkingSuffix(upstreamSonnet)).toBe("claude-sonnet-5-5");
 
     const upstreamOpus = getModelUpstreamId("ag", "claude-opus-5-5");
-    expect(upstreamOpus).toBe("claude-opus-5-5-high(high)");
-    expect(stripThinkingSuffix(upstreamOpus)).toBe("claude-opus-5-5-high");
+    expect(upstreamOpus).toBe("claude-opus-5-5");
+    expect(stripThinkingSuffix(upstreamOpus)).toBe("claude-opus-5-5");
 
     const upstreamHigh = getModelUpstreamId("ag", "claude-sonnet-5-5-high");
     expect(upstreamHigh).toBe("claude-sonnet-5-5-high(high)");

@@ -1,60 +1,41 @@
 import { describe, expect, it } from "vitest";
 
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
-import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 
-// #4409: intermittent 400 code 1210 "Invalid API parameter" on GLM-5.3-Flash via
-// https://api.z.ai/api/anthropic/v1/messages, starting in v0.5.91.
+// #4409 history: z.ai rejects `thinking.type:"disabled"` / `enable_thinking:false`
+// on the GLM-5.3 line ("GLM-5.3 and GLM-5.3-FLASH no longer support disabling
+// thinking"). The old gateway "protected" users by silently forcing thinking ON
+// (thinkingCanDisable:false gate) — i.e. it overwrote the client's explicit ask.
 //
-// z.ai's docs are explicit: "GLM-5.3 and GLM-5.3-FLASH no longer support
-// disabling thinking (an error will occur if the thinking.type parameter is set
-// to disabled). Please ensure that thinking is enabled."
-//
-// capabilities.js advertised thinkingCanDisable:true for that line, so
-// applyThinking emitted enable_thinking:false on any turn that asked for no
-// reasoning — which is why it was INTERMITTENT: only some turns ask.
-
+// D10 至高原则: that gate is gone. The client's disable request is forwarded
+// verbatim; if z.ai answers 400 code 1210, the error reaches the client as-is
+// (I4/D2 — "用户配置引发的错误由用户自己处理，网关不篡改").
 const models = ["glm-5.3-flash", "glm-5.3"];
 
-describe("GLM 5.3 must never be sent thinking=disabled (#4409)", () => {
-  it.each(models)("%s is marked as unable to disable thinking", (id) => {
-    expect(getCapabilitiesForModel("glm", id).thinkingCanDisable).toBe(false);
-  });
-
+describe("GLM 5.3 disable requests are forwarded verbatim (#4409, D10)", () => {
   it.each([
     ["reasoning_effort: none", { reasoning_effort: "none" }],
     ["reasoning_effort: off", { reasoning_effort: "off" }],
     ["thinking.type: disabled", { thinking: { type: "disabled" } }],
-  ])("%s leaves thinking enabled rather than disabling it", (_label, seed) => {
+  ])("%s passes through unchanged on every glm model", (_label, seed) => {
     for (const id of models) {
       const body = structuredClone(seed);
       applyThinking("claude", id, body, "glm");
-      // The failure z.ai reports: enable_thinking:false / thinking disabled.
-      expect(body.enable_thinking, id).toBeUndefined();
-      expect(body.thinking?.type, id).not.toBe("disabled");
+      expect(body, id).toEqual(seed);
     }
   });
 
-  it.each(models)("%s leaves a normal request's own thinking intact", (id) => {
-    // With no disable signal, applyThinking does not inject anything — the
-    // client's own thinking block passes through untouched. What matters is
-    // that nothing turns it OFF.
+  it.each(models)("%s keeps a normal request's own thinking intact", (id) => {
     const body = { thinking: { type: "enabled" } };
     applyThinking("claude", id, body, "glm");
-    expect(body.enable_thinking, id).toBeUndefined();
-    expect(body.thinking?.type, id).not.toBe("disabled");
+    expect(body.thinking).toEqual({ type: "enabled" });
   });
 
-  it("does not regress the models that CAN disable thinking", () => {
-    // 5.1 and older still accept thinking.type=disabled, and this fix must not
-    // change that. (glm-5.2 is deliberately NOT asserted here: a pre-existing
-    // exact MODEL_CAPABILITIES entry sets canDisable:false for it, which is
-    // separate from #4409.)
-    for (const id of ["glm-5.1", "glm-5-turbo", "glm-5"]) {
-      expect(getCapabilitiesForModel("glm", id).thinkingCanDisable, id).toBe(true);
-      const b = { reasoning_effort: "none" };
-      applyThinking("claude", id, b, "glm");
-      expect(b.enable_thinking, id).toBe(false);
+  it("no capability gate may rewrite a client's disable ask on any model", () => {
+    for (const id of ["glm-5.3", "glm-5.3-flash", "glm-5.2", "glm-5.1", "glm-5-turbo"]) {
+      const body = { reasoning_effort: "none" };
+      applyThinking("claude", id, body, "glm");
+      expect(body.reasoning_effort, id).toBe("none");
     }
   });
 });

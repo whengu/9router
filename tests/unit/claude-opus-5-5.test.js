@@ -43,16 +43,18 @@ describe("Claude Opus 5.5 request shape", () => {
   const prepare = (body) => prepareClaudeRequest({ max_tokens: 1024, messages: [{ role: "user", content: "hi" }], ...body }, "claude");
   const think = (body) => applyThinking("claude", "claude-opus-5-5", body, "claude");
 
-  it("clamps thinking off to low effort and never sends a thinking switch", () => {
+  it("keeps thinking off as the client asked — no effort substitution, no switch", () => {
     const body = think({ reasoning_effort: "none" });
     expect(body.thinking).toBeUndefined();
-    expect(body.output_config).toEqual({ effort: "low" });
+    // "none" is forwarded in the shape the client asked for; the upstream
+    // decides what to do with it (I4) — the gateway never invents "low".
+    expect(body.output_config).toBeUndefined();
   });
 
-  it("maps auto effort to high without a thinking switch", () => {
+  it("auto effort passes through unchanged (no substitution, no switch added or removed)", () => {
     const body = think({ thinking: { type: "adaptive" } });
-    expect(body.thinking).toBeUndefined();
-    expect(body.output_config).toEqual({ effort: "high" });
+    expect(body.thinking).toEqual({ type: "adaptive" });
+    expect(body.output_config).toBeUndefined();
   });
 
   it("maps forced tool_choice to auto", () => {
@@ -72,7 +74,7 @@ describe("Claude Opus 5.5 request shape", () => {
       messages: [{ role: "user", content: "hi" }],
     }, true, null, "claude");
     expect(out.thinking?.type).not.toBe("disabled");
-    expect(out.output_config).toEqual({ effort: "low" });
+    expect(out.output_config).toBeUndefined();
     expect(out.tool_choice.type).toBe("auto");
   });
 });

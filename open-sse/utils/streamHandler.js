@@ -238,9 +238,6 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       const now = Date.now();
       const gap = now - lastChunkAt;
       lastChunkAt = now;
-      if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
-        dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
-      }
       armStall();
       controller.enqueue(chunk);
     },

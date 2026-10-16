@@ -42,11 +42,9 @@ describe("GOLDEN request: OpenAI → Claude", () => {
     expect(clean(out)).toMatchSnapshot();
   });
 
-  it("reasoning_effort → adaptive output_config (claude 4.6+)", () => {
-    const body = { messages: [{ role: "user", content: "hi" }], reasoning_effort: "high" };
-    const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-opus-4-6", body, true, { apiKey: "sk-x" }, "anthropic");
-    expect(clean(out)).toMatchSnapshot();
-  });
+  // "reasoning_effort → adaptive output_config (claude 4.6+)" goldened the
+  // deleted translation layer; removed with it (D10). Client effort now rides
+  // through verbatim.
 });
 
 describe("GOLDEN request: OpenAI → Gemini", () => {
@@ -90,8 +88,9 @@ describe("GOLDEN request: OpenAI → Gemini", () => {
 
     expect(out.request.toolConfig).toEqual({ functionCallingConfig: { mode: "VALIDATED" } });
     expect(out.request.safetySettings).toBeDefined();
-    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "high", includeThoughts: true });
-    expect(out.request.generationConfig.maxOutputTokens).toBe(65535);
+    // The thinking-level translation and the maxOutput floor for high thinking
+    // belonged to the deleted translation layer (D10); only the shape-agnostic
+    // guarantees are asserted now.
   });
 });
 

@@ -16,7 +16,6 @@ import { describe, expect, it } from "vitest";
 
 import { getModelTargetFormat, getModelSupportedFormats, getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "../../open-sse/config/providerModels.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
-import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
 // Mirrors the transport selection in open-sse/handlers/chatCore.js so the
@@ -56,25 +55,6 @@ describe("Muse Responses wire routing", () => {
   });
 });
 
-describe("Muse Responses thinking wire shape", () => {
-  it("writes reasoning.effort (not top-level reasoning_effort) for the Responses wire", () => {
-    const body = { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }] };
-    applyThinking(FORMATS.OPENAI_RESPONSES, "muse-spark-1.3-contributor(xhigh)", body, "muse", { mode: "level", level: "xhigh" });
-    expect(body.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
-    expect(body.reasoning_effort).toBeUndefined();
-  });
-
-  it("clamps max to xhigh for the Responses wire", () => {
-    const body = { input: [] };
-    applyThinking(FORMATS.OPENAI_RESPONSES, "muse-spark-1.3", body, "muse", { mode: "level", level: "max" });
-    expect(body.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
-    expect(body.reasoning_effort).toBeUndefined();
-  });
-
-  it("keeps Chat Completions clients on the Chat wire (top-level reasoning_effort)", () => {
-    const body = { messages: [{ role: "user", content: "hi" }] };
-    applyThinking(FORMATS.OPENAI, "muse-spark-1.3", body, "muse", { mode: "level", level: "high" });
-    expect(body.reasoning_effort).toBe("high");
-    expect(body.reasoning).toBeUndefined();
-  });
-});
+// The Muse "Responses thinking wire shape" suite (nested reasoning.effort +
+// summary:"auto" synthesis) covered the deleted translation layer (D10) and is
+// removed with it: client reasoning fields now pass through verbatim.

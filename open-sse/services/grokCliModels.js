@@ -45,7 +45,7 @@ export function parseGrokCliModels(data) {
     }
     if (id === GROK_CLI_MODEL) {
       model.contextLength ||= 500000;
-      model.maxOutputTokens ||= 64000;
+      model.maxOutputTokens ||= 120000;
     }
     models.push(model);
   }

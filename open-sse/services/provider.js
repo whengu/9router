@@ -165,11 +165,7 @@ export function hasThinkingConfig(body) {
   return !!(body.reasoning_effort || body.thinking?.type === "enabled");
 }
 
-// Normalize provider-native thinking config based on last message role.
-// OpenAI reasoning_effort is request-level and must survive tool-result turns.
-export function normalizeThinkingConfig(body) {
-  if (!isLastMessageFromUser(body)) {
-    delete body.thinking;
-  }
-  return body;
-}
+// NOTE: normalizeThinkingConfig was deleted (D10 至高原则) — it dropped the
+// client's `body.thinking` on non-user turns, i.e. it changed client
+// parameters based on conversation shape. Client thinking fields now ride
+// through untouched on every turn.

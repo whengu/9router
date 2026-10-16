@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest, translateResponse, initState } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
-import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { describe, it, expect } from "vitest";
 import { kiroToClaudeResponse } from "../../open-sse/translator/response/kiro-to-claude.js";
 import { kiroToOpenAIResponse } from "../../open-sse/translator/response/kiro-to-openai.js";
 import { selectAnthropicBeta } from "../../open-sse/providers/shared.js";
@@ -131,25 +131,9 @@ describe("Kiro tool names round-trip", () => {
   });
 });
 
-describe("thinking display is preserved for Claude-format upstreams", () => {
-  it("keeps display on adaptive thinking", () => {
-    const body = { model: "claude-sonnet-5", thinking: { type: "adaptive", display: "summarized" }, output_config: { effort: "high" }, messages: [] };
-    applyThinking(FORMATS.CLAUDE, "claude-sonnet-5", body, "claude");
-    expect(body.thinking).toEqual({ type: "adaptive", display: "summarized" });
-    expect(body.output_config).toEqual({ effort: "high" });
-  });
-
-  it("keeps display on budget thinking and omits it when the client sent none", () => {
-    const withDisplay = { model: "claude-haiku-4-5-20251001", thinking: { type: "adaptive", display: "omitted" }, output_config: { effort: "low" }, messages: [] };
-    applyThinking(FORMATS.CLAUDE, "claude-haiku-4-5-20251001", withDisplay, "claude");
-    expect(withDisplay.thinking.type).toBe("enabled");
-    expect(withDisplay.thinking.display).toBe("omitted");
-
-    const without = { model: "claude-sonnet-5", thinking: { type: "adaptive" }, output_config: { effort: "high" }, messages: [] };
-    applyThinking(FORMATS.CLAUDE, "claude-sonnet-5", without, "claude");
-    expect(without.thinking).toEqual({ type: "adaptive" });
-  });
-});
+// The "thinking display is preserved for Claude-format upstreams" suite covered
+// the deleted translation layer (adaptive/enabled rewriting + display carry);
+// client thinking fields now pass through verbatim (D10).
 
 describe("redact-thinking beta follows the client's display request", () => {
   it("keeps redact-thinking by default and drops it for summarized display", () => {

@@ -23,13 +23,15 @@ describe("getThinkingLevels for Kiro", () => {
     }
   });
 
-  it("passes xhigh/max through on the wire for 4.7+, clamps xhigh on 4.6", () => {
+  it("passes xhigh/max through on the wire for 4.7+ and 4.6 alike", () => {
     const xhigh = { output_config: { effort: "xhigh" } };
+    // Kiro's own native field keeps its provider-scoped version gate (kiroConstants).
     expect(buildKiroAdditionalModelRequestFieldsForModel(xhigh, "claude-sonnet-5")?.output_config?.effort).toBe("xhigh");
     expect(buildKiroAdditionalModelRequestFieldsForModel({ output_config: { effort: "max" } }, "claude-opus-4.6")?.output_config?.effort).toBe("max");
     expect(buildKiroAdditionalModelRequestFieldsForModel(xhigh, "claude-opus-4.6")?.output_config?.effort).toBe("high");
-    // Anthropic-wire path: suffix override sends real xhigh on 4.7+, high on 4.6.
+    // Generic Anthropic wire: the suffix is explicit user config (I5), so it is
+    // forwarded verbatim — a model-name table no longer clamps it (I2/I4).
     expect(applyThinking("claude", "claude-opus-5.5(xhigh)", { messages: [] }, "claude").output_config?.effort).toBe("xhigh");
-    expect(applyThinking("claude", "claude-opus-4.6(xhigh)", { messages: [] }, "claude").output_config?.effort).toBe("high");
+    expect(applyThinking("claude", "claude-opus-4.6(xhigh)", { messages: [] }, "claude").output_config?.effort).toBe("xhigh");
   });
 });

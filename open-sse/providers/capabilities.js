@@ -58,13 +58,13 @@ export const DEFAULT_CAPABILITIES = {
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
   // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step|nous
   thinkingFormat: null,
-  thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
+  thinkingCanDisable: true,  // false → model rejects the disabled switch; "none" is then expressed by omitting effort (never upgraded)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
   thinkingEffortSupported: false, // zai format only: model accepts a reasoning_effort level (GLM-5.2+; older GLM ignores it)
   // limits (tokens)
-  contextWindow: 200000,
-  maxOutput: 64000,
-};
+    contextWindow: 200000,
+    maxOutput: 120000,
+  };
 
 // User-added model metadata can carry dashboard service kinds instead of the
 // runtime capability names used here. Map those typed model kinds into input /
@@ -130,20 +130,18 @@ export const MODEL_CAPABILITIES = {
   // GLM vision variants (text GLM has no vision) — 5.3-Flash and 5V-Turbo are
   // natively multimodal per z.ai, and 5.3-Flash carries the full 1M window.
   //
-  // thinkingCanDisable:false on the 5.3 line is REQUIRED, not a default. z.ai's
-  // docs state: "GLM-5.3 and GLM-5.3-FLASH no longer support disabling thinking
-  // (an error will occur if the thinking.type parameter is set to disabled)."
-  // With it left true, applyThinking emitted enable_thinking:false whenever a
-  // turn asked for no reasoning, and z.ai answered 400 code 1210 "Invalid API
-  // parameter" — intermittently, because only some turns ask. #4409
-  "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
-  "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
-  "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
+  // Thinking wire knowledge is provider-scoped (see PROVIDER_CAPABILITIES.glm):
+  // z.ai's GLM-5.3 line once needed thinkingCanDisable:false because z.ai 400s on
+  // thinking:"disabled" (#4409) — that is a z.ai constraint, not a GLM-model one,
+  // so it lives with the provider, not with the model id.
+  "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, contextWindow: 1000000, maxOutput: 131072 },
+  "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, contextWindow: 128000, maxOutput: 120000 },
+  "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, contextWindow: 64000, maxOutput: 120000 },
   // GLM-5.2 has 1M context — pattern *glm-5* only gives 200k, so override here
-  "glm-5.2":           { reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
+  "glm-5.2":           { reasoning: true, contextWindow: 1000000, maxOutput: 131072 },
 
   // DeepSeek's first V4 model with image input; text limits match V4-Flash.
-  "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 384000 },
 
   // DeepSeek V4.1-Flash is natively multimodal — models.dev lists
   // opencode-go/deepseek-v4.1-flash with modalities.input ["text","image"] — and upstream
@@ -154,43 +152,43 @@ export const MODEL_CAPABILITIES = {
   // short-circuits the pattern table, so a vision-only delta would drop them.
   // Some providers (e.g. Kenari) expose this model under the hyphenated ID
   // "deepseek-v4-1-flash" (dash instead of dot); add it as an alias (#4293).
-  "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
-  "deepseek-v4-1-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
-  "deepseek-flash":      { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 128000, maxOutput: 64000 },
+  "deepseek-v4.1-flash": { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 384000 },
+  "deepseek-v4-1-flash": { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 384000 },
+  "deepseek-flash":      { vision: true, reasoning: true, contextWindow: 128000, maxOutput: 120000 },
 
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
-  "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
-  "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
+  "vision-model":      { vision: true, reasoning: true, contextWindow: 1000000 },
+  "coder-model":       { reasoning: true, contextWindow: 1000000 },
 
   // Kimi flagship + coding (platform + Kimi Code ids) — vision/video native
-  "kimi-k3":           { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
-  "k3":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
-  "kimi-for-coding":   { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
-  "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
-  "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
-  "kimi-k2.7-code-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
+  "kimi-k3":           { vision: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
+  "k3":                { vision: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
+  "kimi-for-coding":   { vision: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 },
+  "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 },
+  "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 },
+  "kimi-k2.7-code-highspeed": { vision: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 },
   // OpenCode Free Muse Spark — multimodal (text+image per models.dev meta/muse-spark)
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
-  "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
   // OpenCode Free Union Alpha — multimodal (text+vision), 262K context, 131K max output
   "union-alpha": { vision: true, contextWindow: 262144, maxOutput: 131072 },
   // ── OpenCode Free (reasoning: true in models.dev, ids newer than the tables above) ──
-  // Without these entries getCapabilitiesForModel() falls through to
-  // DEFAULT_CAPABILITIES (reasoning: false) and applyThinking() strips the client's
-  // reasoning_effort before it reaches the upstream — see #2690.
-  // Modalities and limits below are taken verbatim from models.dev.
-  "space-bunny-free":  { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 524288 },
-  "space-bunny":       { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 524288 },
-  "big-pickle":        { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
-  "exo-free":          { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  "fledge-alpha-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  "longcat-2.0":             { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
-  "longcat-2.0-free":        { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
-  "longcat-2.5-preview-free":{ vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
-  "north-mini-code-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 256000, maxOutput: 64000 },
-  "ring-2.6-1t-free":        { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 66000 },
-  "x-preview-f-free":        { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+  // reasoning:true here is display-only metadata (UI picker); the outbound body
+  // no longer depends on it (applyThinking no longer strips on !caps.reasoning).
+  // The openai wire format is the FORMAT_TO_NATIVE fallback, so no thinkingFormat
+  // is needed. Modalities and limits below are taken verbatim from models.dev.
+  "space-bunny-free":  { vision: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 524288 },
+  "space-bunny":       { vision: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 524288 },
+  "big-pickle":        { reasoning: true, contextWindow: 200000, maxOutput: 32000 },
+  "exo-free":          { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
+  "fledge-alpha-free": { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
+  "longcat-2.0":             { reasoning: true, contextWindow: 1000000, maxOutput: 131072 },
+  "longcat-2.0-free":        { reasoning: true, contextWindow: 1000000, maxOutput: 131072 },
+  "longcat-2.5-preview-free":{ vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 131072 },
+  "north-mini-code-free":    { reasoning: true, contextWindow: 256000, maxOutput: 64000 },
+  "ring-2.6-1t-free":        { reasoning: true, contextWindow: 262000, maxOutput: 66000 },
+  "x-preview-f-free":        { vision: true, videoInput: true, reasoning: true, contextWindow: 1000000, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -206,6 +204,13 @@ const CODEX_EXTENDED_CAPS = { ...CODEX_GPT_56_DEFAULT_CAPS, contextWindow: 87200
 // the generic pattern rather than merging with it.
 const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 };
 
+// z.ai wire shape — shared by the z.ai (glm) and z.cn (glm-cn) deployments.
+// Both front the same GLM catalog, so the shape and the per-model
+// reasoning_effort support gate are declared once and referenced twice.
+const ZAI_GLM_CAPS = {
+  "*": { reasoning: true, thinkingFormat: "zai" },
+};
+
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
@@ -216,8 +221,53 @@ export const PROVIDER_CAPABILITIES = {
     "minimaxai/minimax-m2.7": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 },
     "minimaxai/minimax-m3": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 131072 },
     "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
-    "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
-    "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+    "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 120000 },
+    "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 120000 },
+  },
+  // ── Open-source model vendors (direct APIs) ────────────────────────
+  // The thinking wire shape belongs to the DEPLOYMENT, not the model id: the
+  // same open model (GLM/Kimi/DeepSeek/MiniMax/MiMo/Hunyuan) is served by many
+  // vendors with different thinking APIs. These "*" entries declare "this
+  // vendor's shape for every model it serves". Providers that declare nothing
+  // (user-added compatible nodes included) fall through to the target wire
+  // format, i.e. the client's parameters are passed through untouched.
+  "glm": ZAI_GLM_CAPS,
+  "glm-cn": ZAI_GLM_CAPS,
+  "kimi": {
+    "*": { reasoning: true, thinkingFormat: "kimi" },
+  },
+  // Kimchi fronts the Kimi (Moonshot) API, so it keeps the kimi shape.
+  "kimchi": {
+    "*": { reasoning: true, thinkingFormat: "kimi" },
+  },
+  // Muse (Meta) speaks OpenAI-shape effort; declaring it at the provider keeps
+  // the Responses nested-reasoning special case in resolveFormat() alive for
+  // every muse model (the model-name table no longer carries thinking fields).
+  "muse": {
+    "*": { reasoning: true, thinkingFormat: "openai" },
+  },
+  "deepseek": {
+    "*": { reasoning: true, thinkingFormat: "deepseek" },
+  },
+  "minimax": {
+    "*": { reasoning: true, thinkingFormat: "minimax" },
+  },
+  "minimax-cn": {
+    "*": { reasoning: true, thinkingFormat: "minimax" },
+  },
+  // Xiaomi MiMo speaks the deepseek shape (thinking{type} + reasoning_effort).
+  "xiaomi-mimo": {
+    "*": { reasoning: true, thinkingFormat: "deepseek" },
+  },
+  "xiaomi-tokenplan": {
+    "*": { reasoning: true, thinkingFormat: "deepseek" },
+  },
+  "mimo-free": {
+    "*": { reasoning: true, thinkingFormat: "deepseek" },
+  },
+  // Tencent Hunyuan direct API (hunyuan shape: thinking{type,budget_tokens}).
+  "tencent": {
+    "*": { reasoning: true, thinkingFormat: "hunyuan" },
   },
   // glm-5.3-flash on OpenCode Go is served by a backend that rejects the z.ai
   // `thinking` object (400: unknown field "thinking") and wants reasoning_effort.
@@ -290,16 +340,16 @@ export const PROVIDER_CAPABILITIES = {
   // below; it is NOT the inverse of onlyReasoning.
   "codebuddy-cn": {
     "glm-5.2":            { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
-    "glm-5.1":            { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 48000 },
-    "glm-5.0":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 48000 },
-    // maxOutput 64000 per both the plugin-baked fallback and the live server
+    "glm-5.1":            { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 120000 },
+    "glm-5.0":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 120000 },
+    // maxOutput 120000 per both the plugin-baked fallback and the live server
     // table (the old 38000 had no source and truncated output).
-    "glm-4.7":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 48000 },
+    "glm-4.7":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 120000 },
     "minimax-m3":         { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 524288 },
-    "kimi-k2.5":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 164000, maxOutput: 32000 },
-    "hy3-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
-    "deepseek-v4-flash":  { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
-    "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
+    "kimi-k2.5":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 164000, maxOutput: 120000 },
+    "hy3-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 120000 },
+    "deepseek-v4-flash":  { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 120000 },
+    "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 120000 },
     // Per-model values mirror the server's product-config payload (the plugin
     // fetches it from copilot.tencent.com; the `models[]` entries carry
     // maxInputTokens/maxOutputTokens/supportsImages). contextWindow =
@@ -310,8 +360,8 @@ export const PROVIDER_CAPABILITIES = {
     // on by default"; canDisableThinking means "it CAN be turned off". glm-5.3
     // and glm-5.3-flash are onlyReasoning:true BUT canDisableThinking:true, so
     // their thinking is switchable; the hy* models are forced always-on.
-    "hy3":                { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
-    "hy4-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 64000 },
+    "hy3":                { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 120000 },
+    "hy4-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 120000 },
     "glm-5.3":            { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
     "glm-5.3-flash":      { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
     "kimi-k3-1":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 1048576 },
@@ -329,8 +379,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
-    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
-    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
+    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 120000 },
+    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 120000 },
   },
   // Ollama Cloud — the generic *deepseek-v4* pattern misses the vision badge
   // the library page publishes for this model (text+image in, 1M context).
@@ -408,12 +458,12 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
   // Gemini 4 (Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
   { pattern: "*gemini-4*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
-  { pattern: "*gemini-3.8*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
-  { pattern: "*gemini-3.7*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
-  { pattern: "*gemini-3*pro*",  caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65535 } },
-  { pattern: "*gemini-3*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
-  { pattern: "*gemini-2.5*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-budget", thinkingRange: { min: 0, max: 24576 }, contextWindow: 1048576, maxOutput: 65536 } },
-  { pattern: "*gemini-2*",      caps: { vision: true, audioInput: true, videoInput: true, search: true, contextWindow: 1048576, maxOutput: 65536 } },
+  { pattern: "*gemini-3.8*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 120000 } },
+  { pattern: "*gemini-3.7*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 120000 } },
+  { pattern: "*gemini-3*pro*",  caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 120000 } },
+  { pattern: "*gemini-3*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 120000 } },
+  { pattern: "*gemini-2.5*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-budget", thinkingRange: { min: 0, max: 24576 }, contextWindow: 1048576, maxOutput: 120000 } },
+  { pattern: "*gemini-2*",      caps: { vision: true, audioInput: true, videoInput: true, search: true, contextWindow: 1048576, maxOutput: 120000 } },
   { pattern: "*gemini*",        caps: { vision: true, search: true, contextWindow: 1048576 } },
   { pattern: "*gemma*",         caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*nanobanana*",    caps: { vision: true, imageOutput: true } },
@@ -438,18 +488,18 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gpt-5.5*",       caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
   { pattern: "*gpt-5.6*",       caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
   { pattern: "*gpt-5*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
-  { pattern: "*gpt-4o*",        caps: { vision: true, search: true, contextWindow: 128000, maxOutput: 16384 } },
-  { pattern: "*gpt-4.1*",       caps: { vision: true, contextWindow: 1000000, maxOutput: 32768 } },
+  { pattern: "*gpt-4o*",        caps: { vision: true, search: true, contextWindow: 128000, maxOutput: 120000 } },
+  { pattern: "*gpt-4.1*",       caps: { vision: true, contextWindow: 1000000, maxOutput: 120000 } },
   { pattern: "*gpt-4-turbo*",   caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*gpt-4*",         caps: { contextWindow: 128000 } },
-  { pattern: "*gpt-3.5*",       caps: { contextWindow: 16385, maxOutput: 4096 } },
+  { pattern: "*gpt-3.5*",       caps: { contextWindow: 16385, maxOutput: 120000 } },
   { pattern: "*gpt-oss*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 
   // ── OpenAI o-series (reasoning, vision) ──────────────────────────
   { pattern: "*o1-mini*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
-  { pattern: "*o1*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
-  { pattern: "*o3*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
-  { pattern: "*o4*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o1*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 120000 } },
+  { pattern: "*o3*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 120000 } },
+  { pattern: "*o4*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 120000 } },
 
   // ── Grok (vision + Live Search) ──────────────────────────────────
   { pattern: "*grok*image*",    caps: { imageOutput: true } },
@@ -457,74 +507,66 @@ export const PATTERN_CAPABILITIES = [
   // Grok 4.6: 500k context, no text output limit (docs.x.ai/developers/grok-4-6)
   { pattern: "*grok-4.6*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 500000 } },
   // Grok 4.5 (Grok CLI / Grok Build): 500k context per cli-chat-proxy /v1/models
-  { pattern: "*grok-4.5*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 64000 } },
+  { pattern: "*grok-4.5*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 120000 } },
   { pattern: "*grok-4*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
   { pattern: "*grok-3*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*grok*",          caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
 
   // ── Qwen (3.5+ = native vision/video; coder & max = text-only; QwQ = thinking-only) ─
-  { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
-  { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
-  { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
-  { pattern: "*qwen*max*",      caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
-  { pattern: "*qwen3.5*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
-  { pattern: "*qwen3.6*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
-  { pattern: "*qwen3.7*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
-  { pattern: "*qwen*plus*",     caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
-  { pattern: "*qwen*235b*",     caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
-  { pattern: "*qwq*",           caps: { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 131072 } },
-  { pattern: "*qwen*",          caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
+  { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, contextWindow: 262144 } },
+  { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 } },
+  { pattern: "*qwen*coder*",    caps: { reasoning: true, contextWindow: 1000000 } },
+  { pattern: "*qwen*max*",      caps: { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 120000 } },
+  { pattern: "*qwen3.5*",       caps: { vision: true, videoInput: true, reasoning: true, contextWindow: 1000000, maxOutput: 120000 } },
+  { pattern: "*qwen3.6*",       caps: { vision: true, videoInput: true, reasoning: true, contextWindow: 1000000, maxOutput: 120000 } },
+  { pattern: "*qwen3.7*",       caps: { vision: true, videoInput: true, reasoning: true, contextWindow: 1000000, maxOutput: 120000 } },
+  { pattern: "*qwen*plus*",     caps: { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 120000 } },
+  { pattern: "*qwen*235b*",     caps: { reasoning: true, contextWindow: 262144 } },
+  { pattern: "*qwq*",           caps: { reasoning: true, contextWindow: 131072 } },
+  { pattern: "*qwen*",          caps: { reasoning: true, contextWindow: 262144 } },
 
-  // ── Kimi (enabled→reasoning_effort; K2.7-code cannot disable) ─────
-  { pattern: "*kimi*k3*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 } },
-  { pattern: "*kimi*for-coding*", caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 } },
-  { pattern: "*kimi*k2.7*code*", caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 } },
-  { pattern: "*kimi*k2*",       caps: { vision: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 262144, maxOutput: 262144 } },
-  { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
+  // ── Kimi (shape is provider-scoped: PROVIDER_CAPABILITIES.kimi / .kimchi) ─
+  { pattern: "*kimi*k3*",       caps: { vision: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*kimi*for-coding*", caps: { vision: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 } },
+  { pattern: "*kimi*k2.7*code*", caps: { vision: true, videoInput: true, reasoning: true, contextWindow: 262144, maxOutput: 120000 } },
+  { pattern: "*kimi*k2*",       caps: { vision: true, reasoning: true, contextWindow: 262144, maxOutput: 262144 } },
+  { pattern: "*kimi*",          caps: { reasoning: true, contextWindow: 262144 } },
 
-  // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
-  // reasoning_effort is only read by z.ai from GLM-5.2 onward (docs.z.ai/guides/capabilities/thinking) —
-  // older GLM (4.x, 5.0, 5.1, 5-turbo, 5v-turbo) ignore it, so gate it per exact version, not the "*glm-5*" catch-all.
-  // thinkingCanDisable:false for the whole 5.3 line, per z.ai docs:
-  // "GLM-5.3 and GLM-5.3-FLASH no longer support disabling thinking (an error
-  // will occur if the thinking.type parameter is set to disabled)." Set on the
-  // pattern rather than an exact entry so both glm-5.3 and glm-5.3-flash get it
-  // while keeping thinkingEffortSupported:true, which the pattern owns. #4409
-  { pattern: "*glm-5.3*",       caps: { reasoning: true, thinkingFormat: "zai", thinkingEffortSupported: true, thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 } },
-  // 5.2 keeps its 1M window. thinkingCanDisable is deliberately NOT set here:
-  // the exact MODEL_CAPABILITIES entry for glm-5.2 (added Sep 2026) already
-  // declares it false, and that predates this fix — z.ai's docs suggest 5.2 can
-  // in fact disable thinking, so that entry looks wrong, but changing it is
-  // outside the scope of #4409 and is worth its own issue.
-  { pattern: "*glm-5.2*",       caps: { reasoning: true, thinkingFormat: "zai", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
-  { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
-  { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
-  { pattern: "*glm*",           caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
+  // ── GLM / Z.ai ────────────────────────────────────────────────────
+  // The z.ai wire shape (thinking{type} + enable_thinking + reasoning_effort
+  // from GLM-5.2+, #4409) is provider-scoped — see PROVIDER_CAPABILITIES.glm /
+  // .glm-cn. A model-name glob must not attach it: other vendors serving
+  // "glm-5.3" (opencode-go, codebuddy, nvidia, user nodes) have different APIs.
+  { pattern: "*glm-5.3*",       caps: { reasoning: true, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5.2*",       caps: { reasoning: true, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5*",         caps: { reasoning: true, contextWindow: 200000, maxOutput: 128000 } },
+  { pattern: "*glm-4.7*",       caps: { reasoning: true, contextWindow: 200000, maxOutput: 128000 } },
+  { pattern: "*glm-4*",         caps: { reasoning: true, contextWindow: 200000 } },
+  { pattern: "*glm*",           caps: { reasoning: true, contextWindow: 200000 } },
 
-  // ── DeepSeek (thinking.enabled + reasoning_effort; r1 = thinking-only) ─
+  // ── DeepSeek (shape provider-scoped: PROVIDER_CAPABILITIES.deepseek) ─
   // v4.1+ has real image input (probed live on Alibaba MaaS: correct color
   // read from a PNG). v4-pro / v4-flash-0731 accept image blocks but ignore
   // them (answered "Unknown"), so vision stays scoped to v4.* dotted releases.
-  { pattern: "*deepseek-v4.*",  caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*deepseek-v4*",   caps: { reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 384000 } },
-  { pattern: "*reasoner*",      caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
-  { pattern: "*deepseek-r*",    caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
+  { pattern: "*deepseek-v4.*",  caps: { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*deepseek-v4*",   caps: { reasoning: true, contextWindow: 1000000, maxOutput: 384000 } },
+  { pattern: "*reasoner*",      caps: { reasoning: true, contextWindow: 128000 } },
+  { pattern: "*deepseek-r*",    caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*deepseek-chat*", caps: { contextWindow: 128000 } },
-  { pattern: "*deepseek*",      caps: { reasoning: true, thinkingFormat: "deepseek", contextWindow: 128000 } },
+  { pattern: "*deepseek*",      caps: { reasoning: true, contextWindow: 128000 } },
 
-  // ── MiniMax (M3 = adaptive; M2.x cannot disable) ─────────────────
+  // ── MiniMax (shape provider-scoped: PROVIDER_CAPABILITIES.minimax*) ─
   { pattern: "*minimax*image*", caps: { imageOutput: true } },
-  { pattern: "*minimax-m3*",    caps: { vision: true, reasoning: true, thinkingFormat: "minimax", contextWindow: 1000000, maxOutput: 131072 } },
-  { pattern: "*minimax-m2.7*",  caps: { vision: true, reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
-  { pattern: "*minimax-m2.5*",  caps: { vision: true, reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
-  { pattern: "*minimax*",       caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 } },
+  { pattern: "*minimax-m3*",    caps: { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 131072 } },
+  { pattern: "*minimax-m2.7*",  caps: { vision: true, reasoning: true, contextWindow: 204800, maxOutput: 131072 } },
+  { pattern: "*minimax-m2.5*",  caps: { vision: true, reasoning: true, contextWindow: 204800, maxOutput: 131072 } },
+  { pattern: "*minimax*",       caps: { reasoning: true, contextWindow: 200000, maxOutput: 131072 } },
 
-  // ── Xiaomi MiMo (vision + <think>-tag reasoning, always-on, can't disable) ──
-  { pattern: "*mimo*v2.6*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 } },
-  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 } },
-  { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 131072 } },
-  { pattern: "*mimo*",          caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 131072 } },
+  // ── Xiaomi MiMo (shape provider-scoped: PROVIDER_CAPABILITIES.xiaomi-mimo) ─
+  { pattern: "*mimo*v2.6*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, reasoning: true, contextWindow: 262144, maxOutput: 131072 } },
+  { pattern: "*mimo*",          caps: { vision: true, reasoning: true, contextWindow: 262144, maxOutput: 131072 } },
 
   // ── Llama (4 = vision/1M; 3.x = text-only/128K) ──────────────────
   { pattern: "*llama-4*",       caps: { vision: true, contextWindow: 1000000 } },
@@ -547,17 +589,20 @@ export const PATTERN_CAPABILITIES = [
   // ── Poolside Laguna (resellers: openrouter/nvidia/kilocode/vercel/...) ──
   // Free tiers cap S 2.1 well below the paid 1M window → match the free suffix
   // (":free" or "-free", depending on reseller) before the plain id.
-  { pattern: "*laguna-s-2.1*free*", caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
-  { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 } },
-  { pattern: "*laguna*",        caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
+  { pattern: "*laguna-s-2.1*free*", caps: { reasoning: true, contextWindow: 200000, maxOutput: 120000 } },
+  { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, contextWindow: 1000000, maxOutput: 120000 } },
+  { pattern: "*laguna*",        caps: { reasoning: true, contextWindow: 200000, maxOutput: 120000 } },
 
 
   // ── OpenCode Free Muse Spark (multimodal text+image; OpenAI Responses reasoning supports up to xhigh) ─
-  { pattern: "*muse*spark*",    caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*muse*spark*",    caps: { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 131072 } },
   // ── Others ───────────────────────────────────────────────────────
-  { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
-  { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
-  { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
+  // hunyuan / step shapes are provider-scoped (tencent registry); GLM/Kimi/DeepSeek/
+  // MiniMax/MiMo/Qwen shapes likewise — a model-name glob must never decide the
+  // thinking wire format for a model that other vendors deploy differently.
+  { pattern: "*hunyuan*",       caps: { reasoning: true, contextWindow: 262144, maxOutput: 262144 } },
+  { pattern: "hy3*",            caps: { reasoning: true, contextWindow: 262144, maxOutput: 262144 } },
+  { pattern: "*step-*",         caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
@@ -738,27 +783,44 @@ export function getCapabilitiesForModel(provider, model) {
     };
   }
 
-  // 1. Provider-specific override
-  if (provider) {
-    const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
-  }
+  // 1. Provider-scoped knowledge (the deployment layer) — the ONLY layer allowed
+  //    to decide the thinking wire format/knobs. An exact per-model entry merges
+  //    over the model-name tables' display fields (vision/contextWindow/…), and
+  //    the vendor-wide "*" wildcard merges under it. The same model id deployed
+  //    by different vendors has different thinking APIs; only the deployment
+  //    knows its own. Providers that declare nothing (user-added compatible
+  //    nodes included) fall through to the target wire format → client values
+  //    pass through untouched.
+  const providerCaps = provider ? PROVIDER_CAPABILITIES[provider] : null;
+  const providerExact = providerCaps?.[model] || providerCaps?.[baseModel] || null;
+  const providerWild = providerCaps?.["*"] || null;
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
-  //    deltas still apply. Step 1 above still short-circuits.
-  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model);
-  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model);
-
-  // 3. Pattern match (first match wins), refined by catalog + name heuristic
-  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return refine(caps, provider, model);
+  //    deltas still apply.
+  let named = null;
+  if (MODEL_CAPABILITIES[baseModel]) named = MODEL_CAPABILITIES[baseModel];
+  else if (MODEL_CAPABILITIES[model]) named = MODEL_CAPABILITIES[model];
+  else {
+    // 3. Pattern match (first match wins), refined by catalog + name heuristic.
+    //    Patterns carry display-only capabilities (vision/context/maxOutput, the
+    //    UI reasoning badge) — never thinking* fields: a model-name glob must not
+    //    dictate the thinking wire format for a model other vendors deploy
+    //    differently.
+    for (const { pattern, caps } of PATTERN_CAPABILITIES) {
+      if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
+        named = caps;
+        break;
+      }
     }
   }
 
-  // 4. Floor
-  return refine(null, provider, model);
+  // 4. Floor (+ catalog overlay); the provider layer merges on top, exact entry
+  //    last, so a deployment's declared deltas always win over model-name data
+  //    while still inheriting its display fields (contextWindow, vision, …).
+  let result = refine(named, provider, model);
+  if (providerWild) result = { ...result, ...providerWild };
+  if (providerExact) result = { ...result, ...providerExact };
+  return result;
 }
 
 // Gemini 4 (Argon) drops sampling params and requires functionResponse-last merged user turns.

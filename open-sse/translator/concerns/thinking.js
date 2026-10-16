@@ -1,5 +1,10 @@
 // Concern: reasoning_effort ↔ provider-native thinking config.
 // Central source of truth for level↔budget maps (web-standard values).
+//
+// DISPLAY/UI MAPS ONLY. These tables never override a client's request:
+// thinkingUnified.js converts between units only when the target wire format
+// genuinely requires the other one, and forwards explicit client values
+// verbatim (design: docs/tasks/thinking-param-respect).
 // Provider-specific application lives in thinkingUnified.js; this file is maps-only.
 
 // Discrete effort levels, ordered low→high.

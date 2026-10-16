@@ -37,12 +37,14 @@ describe("ocg/muse-spark-1.3-contributor catalog", () => {
       .toBe("https://opencode.ai/zen/go/v1/responses");
   });
 
-  it("advertises reasoning via the shared muse-spark pattern", () => {
+  it("advertises reasoning; the wire shape stays undeclared for this pair", () => {
     expect(getCapabilitiesForModel(PROVIDER, MODEL)).toMatchObject({
       vision: true,
       reasoning: true,
-      thinkingFormat: "openai",
     });
+    // opencode-go declares no thinking shape for this id, so none is invented
+    // from the model name (I2) — the Responses wire is the target format.
+    expect(getCapabilitiesForModel(PROVIDER, MODEL).thinkingFormat).toBeNull();
     expect(getThinkingLevels(PROVIDER, MODEL)).toContain("xhigh");
   });
 });

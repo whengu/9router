@@ -25,7 +25,9 @@ describe("compat base URLs / version", () => {
 
 describe("default token limits", () => {
   it("max/min", () => {
-    expect(DEFAULT_MAX_TOKENS).toBe(64000);
+    // Local decision (this task, D9): DEFAULT_CAPABILITIES.maxOutput is 120000
+    // in this tree, so the derived runtime default follows it.
+    expect(DEFAULT_MAX_TOKENS).toBe(120000);
     expect(DEFAULT_MIN_TOKENS).toBe(32000);
   });
 });

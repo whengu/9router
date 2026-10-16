@@ -1,13 +1,20 @@
 // Resolve valid thinking levels per model — drives UI level picker (suffix "model(level)").
 // Reuses capabilities.js (thinkingFormat/canDisable) so this file only maps format→levels (DRY).
+//
+// UI-ONLY: the runtime request path never consults this table to clamp or
+// rewrite a client's thinking value. Level support is advertised here for the
+// dashboard picker; what the upstream accepts is decided by the upstream, and
+// its errors are surfaced to the client (design: docs/tasks/thinking-param-respect).
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
-import { getProviderModels } from "../config/providerModels.js";
+import { getProviderModels, getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { FORMAT_TO_NATIVE } from "../translator/formats.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
-  base: ["none", "low", "medium", "high"],                          // qwen, step, hunyuan, gemini-budget
+  base: ["none", "low", "medium", "high"],                          // qwen, hunyuan, gemini-budget
+  stepMax: ["none", "low", "medium", "high", "max"],                 // step — max allowed (supplier decides)
   onOff: ["none", "thinking"],                                      // zai (binary), minimax (adaptive)
   openai: ["none", "minimal", "low", "medium", "high", "xhigh"],    // GPT-5.x / o-series (no "max")
   levelMax: ["none", "low", "medium", "high", "max"],               // kimi
@@ -30,7 +37,7 @@ const FORMAT_LEVELS = {
   commandcode: ["none", "low", "medium", "high", "xhigh", "max"],
   minimax: L.onOff,
   hunyuan: L.base,
-  step: L.base,
+  step: L.stepMax,
   nous: L.base,
 };
 
@@ -99,7 +106,12 @@ export function getThinkingLevels(provider, model) {
   const hit = PATTERN_THINKING.find((entry) =>
     (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
   );
-  let levels = modelLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  // A provider that declares no thinking shape falls back to the target wire
+  // format — the shape the request will actually be translated into (I2).
+  const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  const targetFormat = provider ? getModelTargetFormat(alias, model) : null;
+  const wireFormat = targetFormat ? FORMAT_TO_NATIVE[targetFormat] : null;
+  let levels = modelLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat || wireFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }

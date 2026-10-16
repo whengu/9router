@@ -1,26 +1,21 @@
-// Unified thinking normalization: extract client intent → apply provider-native format.
-// Config-driven: thinking format/limits come from capabilities.js + registry transport,
-// never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
+// Thinking parameters: pure passthrough. See DECISIONS.md D10 (至高原则).
+//
+//   "以客户端为准：网关必须原样透传客户端的思考参数，不允许做任何翻译/转换/
+//    改写——包括跨 wire 格式的形状转换、单位换算、档位量化、默认值注入、
+//    能力表门控。客户端没说的，网关不说；客户端说了的，网关原样说。"
+//
+// The translation layer that used to live here (resolveFormat / applyFormat and
+// its ~15 vendor shape cases, level↔budget quantization, capability gates,
+// gemini clamps, default injection) has been deleted: it rewrote client values
+// based on hardcoded model-name knowledge. What remains:
+//   · parseSuffix/extractThinking   — read-only helpers (kiroConstants uses them)
+//   · applyThinking                  — expresses an explicit `model(level)`
+//                                      suffix (I5) in the CLIENT's own field
+//                                      shape. The value is written verbatim;
+//                                      no vendor shape, no unit conversion.
 
-import { getCapabilitiesForModel } from "../../providers/capabilities.js";
-import { getThinkingLevels } from "../../providers/thinkingLevels.js";
-import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
-
-// Map a target wire-format to its native thinking format (when capability has none).
-const FORMAT_TO_NATIVE = {
-  openai: "openai",
-  "openai-responses": "openai",
-  "openai-response": "openai",
-  codex: "openai",
-  claude: "claude-budget",
-  gemini: "gemini-budget",
-  "gemini-cli": "gemini-budget",
-  vertex: "gemini-budget",
-  antigravity: "gemini-budget",
-  kiro: "kiro",
-  commandcode: "commandcode",
-};
+import { LEVEL_TO_BUDGET } from "./thinking.js";
+import { FORMATS } from "../formats.js";
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
 export function stripThinkingSuffix(model) {
@@ -45,7 +40,7 @@ export function parseSuffix(model) {
   return { cleanModel, override: null };
 }
 
-// Extract unified thinking intent from a request body (post-translation, mixed shapes).
+// Extract unified thinking intent from a request body (read-only).
 // Returns { mode, budget?, level? } or null when no thinking intent present.
 export function extractThinking(body) {
   if (!body || typeof body !== "object") return null;
@@ -102,349 +97,61 @@ export function extractThinking(body) {
   return null;
 }
 
-// Capture thinking intent from a body before format translation strips it.
-// Besides the effort, records whether an OpenAI-shaped client wants the thinking
-// text itself: Claude returns it only with thinking.display "summarized", a field
-// OpenAI has no equivalent for, so the intent cannot survive translation on its own.
-export function captureThinking(body) {
-  const cfg = extractThinking(body);
-  if (!cfg || cfg.mode === "none") return cfg;
-  const display = openAIThinkingDisplay(body);
-  return display ? { ...cfg, display } : cfg;
+// Value carried by an explicit model(level) suffix, verbatim —
+// number stays number, level string stays string. null when no suffix.
+// The caller writes it into the field its OWN client shape uses.
+export function suffixThinkingValue(model) {
+  const { override } = parseSuffix(model);
+  if (!override) return null;
+  if (override.mode === "budget") return override.budget;
+  if (override.mode === "level") return override.level;
+  if (override.mode === "none") return "none";
+  return "auto";
 }
 
-function openAIThinkingDisplay(body) {
-  // Responses API: reasoning.summary is the explicit request for reasoning text.
-  if (body.reasoning && typeof body.reasoning === "object") {
-    const summary = body.reasoning.summary;
-    return typeof summary === "string" && summary && summary !== "none" ? "summarized" : undefined;
-  }
-  // Chat Completions has no summary knob. A client setting reasoning_effort is
-  // asking for reasoning, and reasoning_content is how it would receive it.
-  if (typeof body.reasoning_effort === "string") return "summarized";
-  return undefined;
-}
-
-const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
-
-function resolveFormat(targetFormat, model, provider) {
-  if (targetFormat === "commandcode") return "commandcode";
-  const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
-  if (providerFmt) return providerFmt;
-  const caps = getCapabilitiesForModel(provider, model);
-  const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
-  if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
-    // Muse (Meta) strict Responses API rejects top-level reasoning_effort and
-    // requires nested reasoning: { effort, summary }. Other upstreams keep Chat-shaped effort.
-    if (provider === "muse" && targetFormat === "openai-responses") {
-      return "openai-responses";
-    }
-    return caps.thinkingFormat;
-  }
-  return FORMAT_TO_NATIVE[targetFormat] || "openai";
-}
-
-// Convert unified config to a budget number (for budget-based formats).
-function toBudget(cfg, range) {
-  let budget;
-  if (cfg.mode === "budget") budget = cfg.budget;
-  else if (cfg.mode === "level") budget = effortToBudget(cfg.level);
-  else if (cfg.mode === "auto") return -1;
-  if (!Number.isFinite(budget)) return undefined;
-  if (range) {
-    if (range.min != null && budget < range.min) budget = range.min;
-    if (range.max != null && budget > range.max) budget = range.max;
-  }
-  return budget;
-}
-
-// Convert unified config to a discrete level string.
-function toLevel(cfg) {
-  if (cfg.mode === "level") return cfg.level;
-  if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
-  if (cfg.mode === "auto") return "auto";
-  return null;
-}
-
-function normalizeOpenAILevel(level, supportedLevels) {
-  if (level !== "max" && level !== "ultra") return level;
-  if (supportedLevels?.includes(level)) return level;
-  if (level === "ultra" && supportedLevels?.includes("max")) return "max";
-  return "xhigh";
-}
-
-function toGeminiThinkingLevel(cfg) {
-  const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
-  return effortToThinkingLevel(raw);
-}
-
-function toKimiReasoningEffort(cfg) {
-  const level = toLevel(cfg);
-  if (level === "auto") return "high";
-  if (level === "minimal") return "low";
-  if (level === "xhigh") return "max";
-  if (["low", "medium", "high", "max"].includes(level)) return level;
-  return null;
-}
-
-const GEMINI_LEVEL_OUTPUT_FLOOR = {
-  minimal: 4096,
-  low: 8192,
-  medium: 16384,
-  high: 65535,
-};
-
-function geminiBudgetOutputFloor(budget) {
-  if (budget === -1) return 32768;
-  if (!Number.isFinite(budget)) return 32768;
-  if (budget <= 1024) return 8192;
-  if (budget <= 8192) return 16384;
-  if (budget <= 24576) return 32768;
-  return 65535;
-}
-
-function geminiLevelOutputFloor(level) {
-  return GEMINI_LEVEL_OUTPUT_FLOOR[level] || GEMINI_LEVEL_OUTPUT_FLOOR.high;
-}
-
-// Gemini nests thinkingConfig under generationConfig. gemini-cli / antigravity wrap
-// the whole request in a { request: { generationConfig } } envelope — target the
-// envelope's generationConfig when present, else the top-level one.
-function getGeminiGenerationConfig(body) {
-  if (body.request && typeof body.request === "object") {
-    if (!body.request.generationConfig || typeof body.request.generationConfig !== "object") {
-      body.request.generationConfig = {};
-    }
-    return body.request.generationConfig;
-  }
-  if (!body.generationConfig || typeof body.generationConfig !== "object") {
-    body.generationConfig = {};
-  }
-  return body.generationConfig;
-}
-
-function setGeminiThinking(body, tc) {
-  const gc = getGeminiGenerationConfig(body);
-  gc.thinkingConfig = tc;
-}
-
-function ensureGeminiOutputFloor(body, floor, caps) {
-  const cap = Number.isFinite(caps?.maxOutput) ? caps.maxOutput : floor;
-  const target = Math.min(floor, cap);
-  const gc = getGeminiGenerationConfig(body);
-  const current = Number(gc.maxOutputTokens);
-  if (!Number.isFinite(current) || current < target) {
-    gc.maxOutputTokens = target;
-  }
-}
-
-// Strip every known thinking field from a body (used before re-applying / when unsupported).
-function stripAll(body) {
-  delete body.thinking;
-  delete body.reasoning_effort;
-  delete body.reasoning;
-  delete body.thinkingConfig;
-  delete body.enable_thinking;
-  delete body.thinking_budget;
-  delete body.output_config;
-  if (body.generationConfig) delete body.generationConfig.thinkingConfig;
-  if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
-  if (body.params && typeof body.params === "object") {
-    delete body.params.reasoning_effort;
-    delete body.params.thinking;
-  }
-}
-
-// Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
-  const none = cfg.mode === "none";
-  const canDisable = caps.thinkingCanDisable !== false;
-  // Model cannot disable thinking → clamp "none" to minimal effort instead.
-  const eff = none && !canDisable ? { mode: "level", level: "minimal" } : cfg;
-
-  switch (fmt) {
-    case "openai": {
-      if (none && canDisable) { body.reasoning_effort = "none"; break; }
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+// Write a value into a client-shaped body, in that client's own field. Never
+// converts: a number stays a number, a level stays a level string. A wire that
+// has no field for a number (OpenAI `reasoning_effort`) still receives the
+// number verbatim — the upstream decides (I4).
+function writeClientShaped(sourceFormat, body, value) {
+  switch (sourceFormat) {
+    case FORMATS.CLAUDE:
+      if (value === "none") { body.thinking = { type: "disabled" }; break; }
+      if (typeof value === "number") { body.thinking = { type: "enabled", budget_tokens: value }; break; }
+      body.thinking = { type: value === "auto" ? "adaptive" : "enabled" };
+      if (typeof value === "string" && value !== "auto") body.output_config = { effort: value };
       break;
-    }
-    case "openai-responses": {
-      // The Responses API nests effort: reasoning:{effort,summary}. A top-level
-      // reasoning_effort is rejected by strict upstreams (Meta: "unknown
-      // parameter `reasoning_effort`"). "none" is expressed by omitting reasoning.
-      if (none && canDisable) { delete body.reasoning; break; }
-      const level = toLevel(eff);
-      if (level) {
-        const current = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
-          ? body.reasoning
-          : {};
-        body.reasoning = { ...current, effort: normalizeOpenAILevel(level, supportedLevels) };
-        if (!body.reasoning.summary) body.reasoning.summary = "auto";
-      }
+    case FORMATS.OPENAI_RESPONSES:
+      body.reasoning = {
+        ...(body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning) ? body.reasoning : {}),
+        effort: value,
+      };
       delete body.reasoning_effort;
       break;
-    }
-    case "claude-adaptive": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      // Models that can disable thinking need the explicit adaptive switch.
-      // Permanently adaptive models such as Fable 5.1 accept effort directly.
-      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
-      else delete body.thinking;
-      const level = toLevel(eff);
-      // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
-      // Claude effort has no "minimal" (always-on models clamp "none" to it).
-      body.output_config = { effort: level === "auto" ? "high"
-        : level === "minimal" ? "low"
-        : level === "xhigh" && !supportedLevels?.includes("xhigh") ? "high" : level };
-      break;
-    }
-    case "claude-budget": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled", ...(display ? { display } : {}) } : { type: "enabled", budget_tokens: budget || 8192, ...(display ? { display } : {}) };
-      break;
-    }
-    case "gemini-level": {
-      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
-      // Models without a "minimal" tier (Gemini 4) reject it with 400 — clamp to the lowest supported level.
-      const lowest = supportedLevels?.find((l) => l !== "none");
-      if (supportedLevels?.length && lowest && !supportedLevels.includes(level)) level = lowest;
-      setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
-      ensureGeminiOutputFloor(body, geminiLevelOutputFloor(level), caps);
-      break;
-    }
-    case "gemini-budget": {
-      if (none && canDisable) { setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false }); break; }
-      const budget = toBudget(eff, caps.thinkingRange);
-      setGeminiThinking(body, { thinkingBudget: budget ?? -1, includeThoughts: true });
-      ensureGeminiOutputFloor(body, geminiBudgetOutputFloor(budget ?? -1), caps);
-      break;
-    }
-    case "zai": {
-      // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
-      if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
-      body.thinking = { type: "enabled" };
-      // reasoning_effort is only read by z.ai from GLM-5.2 onward — older GLM ignores it
-      // (see thinkingEffortSupported in capabilities.js). Skip on unsupported models so we
-      // don't send a field the API doesn't recognize.
-      if (caps.thinkingEffortSupported) {
-        const zaiLvl = toLevel(eff);
-        // GLM-5.3 only accepts exactly low|high|max (anything else errors); GLM-5.2 accepts
-        // a wider set but z.ai maps low/medium->high and xhigh->max server-side anyway, so
-        // this 3-value mapping matches both.
-        body.reasoning_effort = (zaiLvl === "low" || zaiLvl === "minimal") ? "low"
-          : (zaiLvl === "high" || zaiLvl === "medium") ? "high"
-          : "max";
-      }
-      break;
-    }
-    case "qwen": {
-      if (none && canDisable) { body.enable_thinking = false; break; }
-      body.enable_thinking = true;
-      const budget = toBudget(eff, caps.thinkingRange);
-      if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
-      break;
-    }
-    case "deepseek": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      body.thinking = { type: "enabled" };
-      // DeepSeek: low/medium→high, xhigh/max→max. Some backends (mimo v2.5-pro/v2.6
-      // on opencode-go, probed live) 400 on "max" — clamp to high when the declared
-      // levels exclude it.
-      const level = toLevel(eff);
-      const want = level === "xhigh" || level === "max" ? "max" : "high";
-      body.reasoning_effort = want === "max" && supportedLevels && !supportedLevels.includes("max") ? "high" : want;
-      break;
-    }
-    case "kimi": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const effort = toKimiReasoningEffort(eff);
-      if (effort) body.reasoning_effort = effort;
-      break;
-    }
-    case "minimax": {
-      // M3 adaptive; M2.x cannot disable (handled via canDisable clamp).
-      body.thinking = { type: none && canDisable ? "disabled" : "adaptive" };
-      break;
-    }
-    case "hunyuan": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
-      break;
-    }
-    case "step": {
-      if (none && canDisable) break;
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
-      break;
-    }
-    case "nous": {
-      // Nous's first-party client omits `reasoning` when disabled and sends a
-      // nested object when enabled. The API does not advertise top-level
-      // `reasoning_effort` for all models, so send nested `reasoning`.
-      if (none && canDisable) break;
-      const level = eff.mode === "auto" ? "medium" : toLevel(eff);
-      body.reasoning = {
-        enabled: true,
-        ...(level ? { effort: level } : {}),
+    case FORMATS.GEMINI:
+    case FORMATS.GEMINI_CLI:
+      body.generationConfig = {
+        ...(body.generationConfig || {}),
+        thinkingConfig: typeof value === "number"
+          ? { thinkingBudget: value }
+          : value === "none"
+            ? { thinkingBudget: 0 }
+            : { thinkingLevel: value },
       };
       break;
-    }
-    case "tokenrouter": {
-      // TokenRouter's reasoning_effort enum is low/medium/high/xhigh/max — it rejects
-      // "none"/"auto" with a 400 and supports "max" natively (no clamp like openai).
-      // "none" → omit the field so the upstream default applies; pass levels through.
-      if (none || eff.mode === "auto") break;
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
-      break;
-    }
-    case "kiro":
-      // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
-      break;
-    case "commandcode": {
-      // Native CLI sends reasoning_effort inside params of the /alpha/generate envelope.
-      if (!body.params || typeof body.params !== "object") body.params = {};
-      if (none && canDisable) {
-        delete body.params.reasoning_effort;
-        break;
-      }
-      const level = toLevel(eff);
-      if (level) body.params.reasoning_effort = level;
-      break;
-    }
     default:
+      body.reasoning_effort = value;
       break;
   }
+  return body;
 }
 
-// Public entry: normalize thinking for the resolved target format.
-// Mutates and returns body. No-op when model has no reasoning capability.
-// `intent` is a pre-captured config (from captureThinking on the original body);
-// falls back to extracting from the current body when omitted.
-export function applyThinking(targetFormat, model, body, provider = null, intent = undefined) {
+// Apply thinking config to a request body. Passthrough (D10): the only thing
+// written is an explicit `model(level)` suffix (I5), expressed in the CLIENT's
+// own shape. No capability table, no level set, no default, no vendor shape.
+export function applyThinking(sourceFormat, model, body) {
   if (!body || typeof body !== "object") return body;
-
-  const { cleanModel, override } = parseSuffix(model);
-  const cfg = override || intent || extractThinking(body);
-  const caps = getCapabilitiesForModel(provider, cleanModel);
-
-  // Model cannot reason → strip any stray thinking fields.
-  if (!caps.reasoning) {
-    stripAll(body);
-    return body;
-  }
-  if (!cfg) return body;
-
-  const fmt = resolveFormat(targetFormat, cleanModel, provider);
-  const supportedLevels = getThinkingLevels(provider, cleanModel);
-  // Anthropic's `display` (summarized | omitted) decides whether thinking text
-  // comes back at all; keep what the client asked for instead of resetting it.
-  // An OpenAI-shaped client's ask arrives via the captured intent instead.
-  const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
-  stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
-  return body;
+  const value = suffixThinkingValue(model);
+  if (value === null) return body;
+  return writeClientShaped(sourceFormat, body, value);
 }

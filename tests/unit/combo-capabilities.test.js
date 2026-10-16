@@ -16,8 +16,9 @@ describe("aggregateComboCapabilities — single model passthrough", () => {
     const caps = aggregateComboCapabilities(["opencode-go/mimo-v2.5"]);
     expect(caps.vision).toBe(true);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingFormat).toBe("deepseek");
-    expect(caps.thinkingCanDisable).toBe(false);
+    // Thinking wire shape is provider-scoped (I2): opencode-go declares none
+    // for this id, so the model-name tables must not supply one.
+    expect(caps.thinkingFormat).toBeNull();
     expect(caps.contextWindow).toBe(1048576);
     expect(caps.maxOutput).toBe(131072);
   });
@@ -80,22 +81,34 @@ describe("aggregateComboCapabilities — intersection: tools", () => {
 });
 
 describe("aggregateComboCapabilities — primary model drives reasoning fields", () => {
-  it("thinkingFormat comes from the first model", () => {
-    // primary: mimo-v2.5 (deepseek); secondary: kimi-k2.5 (kimi)
+  it("reasoning comes from the first model; the wire shape stays provider-scoped", () => {
+    // primary: mimo-v2.5; secondary: kimi-k2.5 — neither id may carry a
+    // thinkingFormat from the model-name tables (I2).
     const caps = aggregateComboCapabilities([
       "opencode-go/mimo-v2.5",
       "opencode-go/kimi-k2.5",
     ]);
-    expect(caps.thinkingFormat).toBe("deepseek");
+    expect(caps.thinkingFormat).toBeNull();
     expect(caps.reasoning).toBe(true);
   });
 
-  it("flipping order changes thinkingFormat to the new primary", () => {
+  it("flipping order keeps the wire shape provider-scoped", () => {
     const caps = aggregateComboCapabilities([
       "opencode-go/kimi-k2.5",
       "opencode-go/mimo-v2.5",
     ]);
-    expect(caps.thinkingFormat).toBe("kimi");
+    expect(caps.thinkingFormat).toBeNull();
+  });
+
+  it("carries a provider-declared shape through the combo", () => {
+    // glm/glm-cn declare the z.ai shape at the vendor layer — that is the only
+    // layer allowed to decide it.
+    const caps = aggregateComboCapabilities([
+      "glm/glm-5.3-flash",
+      "opencode-go/mimo-v2.5",
+    ]);
+    expect(caps.thinkingFormat).toBe("zai");
+    expect(caps.reasoning).toBe(true);
   });
 });
 

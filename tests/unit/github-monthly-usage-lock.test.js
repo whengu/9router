@@ -74,7 +74,9 @@ describe("GitHub monthly usage exhaustion", () => {
       expect(dbMocks.updateProviderConnection).toHaveBeenCalledWith(
         "github-a",
         expect.objectContaining({
-          "modelLock_claude-fable-5": "2026-08-04T19:32:00.000Z",
+          // Cooldown follows the local errorConfig (this task, D9): COOLDOWN.long
+          // is 1000ms here, so the lock lands one second after the mocked now.
+          "modelLock_claude-fable-5": "2026-08-04T19:30:01.000Z",
         }),
       );
       expect(dbMocks.updateProviderConnection.mock.calls[0][1])

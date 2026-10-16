@@ -9,7 +9,6 @@ import {
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getModelsByProviderId } from "../../open-sse/config/providerModels.js";
 import { parseModel, resolveProviderAlias } from "../../open-sse/services/model.js";
-import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { refreshNousToken } from "../../open-sse/services/tokenRefresh.js";
 import nousOAuth from "../../src/lib/oauth/providers/nous.js";
 import {
@@ -113,25 +112,9 @@ describe("Nous Research provider", () => {
     }
   });
 
-  it("maps reasoning controls to Nous's nested wire format", () => {
-    const enabled = {
-      model: sampleFreeModel,
-      messages: [{ role: "user", content: "reason about this" }],
-      reasoning_effort: "high",
-    };
-    applyThinking("openai", sampleFreeModel, enabled, "nous");
-    expect(enabled.reasoning_effort).toBeUndefined();
-    expect(enabled.reasoning).toEqual({ enabled: true, effort: "high" });
-
-    const disabled = {
-      model: sampleFreeModel,
-      messages: [{ role: "user", content: "answer directly" }],
-      reasoning_effort: "none",
-    };
-    applyThinking("openai", sampleFreeModel, disabled, "nous");
-    expect(disabled.reasoning_effort).toBeUndefined();
-    expect(disabled.reasoning).toBeUndefined();
-  });
+  // The "maps reasoning controls to Nous's nested wire format" case covered the
+  // deleted translation layer (reasoning_effort → reasoning:{enabled,effort});
+  // client fields now pass through verbatim (D10).
 
   it("builds a minimal authenticated chat probe instead of trusting public models", () => {
     const probe = createNousApiKeyProbe("test-api-key");

@@ -76,8 +76,10 @@ export class XiaomiMimoExecutor extends DefaultExecutor {
       const rawEffort = out.reasoning_effort || body?.reasoning_effort || body?.output_config?.effort;
       if (rawEffort) {
         delete out.reasoning_effort;
-        const norm = String(rawEffort).toLowerCase() === "xhigh" ? "high" : String(rawEffort).toLowerCase();
-        out.output_config = { ...(out.output_config || {}), effort: norm };
+        // Shape bridge only — the effort value is forwarded verbatim (I1).
+        // Whether MiMo's account route accepts a given level is the vendor's
+        // call; a rejection surfaces to the client (I4).
+        out.output_config = { ...(out.output_config || {}), effort: String(rawEffort).toLowerCase() };
       }
 
       if (out.temperature == null) out.temperature = 1.0;

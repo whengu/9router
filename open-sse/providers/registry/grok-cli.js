@@ -71,7 +71,7 @@ export default {
       id: GROK_CLI_MODEL,
       name: "Grok Build",
       contextLength: 500000,
-      maxOutputTokens: 64000,
+      maxOutputTokens: 120000,
     },
     { id: "grok-4.5", name: "Grok 4.5" },
     { id: "grok-4.5-high", name: "Grok 4.5 (High)", upstreamModelId: "grok-4.5" },

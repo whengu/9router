@@ -96,7 +96,7 @@ describe("xiaomi-mimo executor", () => {
     expect(out.output_config).toEqual({ effort: "high" });
   });
 
-  it("normalizes xhigh reasoning_effort to high in output_config.effort", () => {
+  it("forwards xhigh reasoning_effort verbatim in output_config.effort", () => {
     const creds = { providerSpecificData: { mimoPassToken: "token" } };
     const body = {
       messages: [{ role: "user", content: "complex" }],
@@ -104,7 +104,7 @@ describe("xiaomi-mimo executor", () => {
     };
     const out = ex.transformRequest("mimo-v2.6-pro", body, true, creds);
     expect(out.reasoning_effort).toBeUndefined();
-    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.output_config).toEqual({ effort: "xhigh" });
   });
 
   it("applies defaults without overriding explicit values", () => {

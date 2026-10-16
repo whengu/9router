@@ -62,7 +62,9 @@ describe("Grok CLI live models", () => {
       expect.objectContaining({
         id: "grok-build",
         contextLength: 500000,
-        maxOutputTokens: 64000,
+        // Local decision (this task, D9): grok-build's fallback maxOutputTokens
+        // is 120000 in this tree; the API payload here carries none.
+        maxOutputTokens: 120000,
       }),
     ]);
     expect(refreshProviderCredentials).toHaveBeenCalledWith(

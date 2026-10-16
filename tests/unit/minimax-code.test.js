@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PROVIDERS, PROVIDER_OAUTH } from "../../open-sse/config/providers.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
-import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { createMinimaxCodeProvider } from "../../src/lib/oauth/providers/minimax-code-shared.js";
 
 // ── executor under test (mock the heavy base + its refresh import) ──────────
@@ -77,38 +76,9 @@ describe("minimax-code capabilities + thinking levels", () => {
   });
 });
 
-describe("minimax-code thinking → wire body (claude-adaptive)", () => {
-  it("maps an effort level to the permanent-adaptive wire shape (effort only)", () => {
-    // M3.1 cannot disable thinking (like Fable 5.1): the claude-adaptive branch
-    // drops the thinking object and sends output_config.effort alone — the
-    // same shape MiniMax Code's own client puts on the wire.
-    const body = { model: "MiniMax-M3.1-Flash-Preview", messages: [] };
-    applyThinking("claude", "MiniMax-M3.1-Flash-Preview(xhigh)", body, "minimax-code");
-    expect(body.thinking).toBeUndefined();
-    expect(body.output_config.effort).toBe("xhigh");
-  });
-
-  it("keeps an advertised level verbatim (xhigh is in M3.1's efforts)", () => {
-    const body = { model: "MiniMax-M3.1-Flash-Preview", messages: [] };
-    applyThinking("claude", "MiniMax-M3.1-Flash-Preview(xhigh)", body, "minimax-code");
-    expect(body.output_config.effort).toBe("xhigh");
-  });
-
-  it("maps none on a switchable model to disabled thinking without effort", () => {
-    const body = { model: "MiniMax-M3", messages: [] };
-    applyThinking("claude", "MiniMax-M3(none)", body, "minimax-code");
-    expect(body.thinking).toEqual({ type: "disabled" });
-    expect(body.output_config).toBeUndefined();
-  });
-
-  it("a switchable model's effort keeps the adaptive switch on the wire", () => {
-    // canDisable → thinking {type:"adaptive"} rides along with effort
-    const body = { model: "MiniMax-M3", messages: [] };
-    applyThinking("claude", "MiniMax-M3(high)", body, "minimax-code");
-    expect(body.thinking).toEqual({ type: "adaptive" });
-    expect(body.output_config.effort).toBe("high");
-  });
-});
+// The "minimax-code thinking → wire body (claude-adaptive)" suite covered the
+// deleted translation layer (D10): effort→output_config mapping, adaptive
+// switch synthesis, and clamps are gone — the client's fields ride through.
 
 describe("minimax-code OAuth device flow module", () => {
   const provider = createMinimaxCodeProvider({ account: "https://account.minimax.cn" });

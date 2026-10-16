@@ -93,8 +93,9 @@ describe("OpenAI → Claude context mapping", () => {
   // model at "max" effort (budget 128000) can exceed the clamped max_tokens and
   // trip Anthropic's "max_tokens > budget_tokens" rule (400). See claude.js.
   describe("max_tokens vs thinking.budget_tokens reconciliation", () => {
-    // 64k-ceiling model (maxOutput 64000) + max-effort budget 128000: budget alone
-    // exceeds the ceiling → cap max_tokens at 64000 and shrink budget below it.
+    // Ceiling model (maxOutput 120000 in this tree — D9) + max-effort budget
+    // 128000: budget alone exceeds the ceiling → cap max_tokens at 120000 and
+    // shrink budget below it.
     it("max effort budget on a 64k model → budget < max_tokens ≤ 64000", () => {
       const out = prepareClaudeRequest({
         model: "claude-opus-4-20250514",
@@ -102,7 +103,7 @@ describe("OpenAI → Claude context mapping", () => {
         thinking: { type: "enabled", budget_tokens: 128000 },
         messages: [{ role: "user", content: "q" }],
       }, "anthropic");
-      expect(out.max_tokens).toBe(64000);
+      expect(out.max_tokens).toBe(120000);
       expect(out.thinking.budget_tokens).toBeLessThan(out.max_tokens);
       expect(out.thinking.budget_tokens).toBeGreaterThan(0);
     });
@@ -160,15 +161,16 @@ describe("OpenAI → Claude context mapping", () => {
       expect(out.thinking.budget_tokens).toBeLessThan(out.max_tokens);
     });
 
-    // Regression: a default 64k-ceiling model still clamps an over-large client
-    // max_tokens down to 64000 (the lift is per-model, not global).
+    // Regression: a default-ceiling model still clamps an over-large client
+    // max_tokens down to the default ceiling (the lift is per-model, not global).
+    // The default ceiling is 120000 in this tree (D9).
     it("over-large client max_tokens on a 64k model is still clamped to 64000", () => {
       const out = prepareClaudeRequest({
         model: "claude-opus-4-20250514",
-        max_tokens: 120000,
+        max_tokens: 200000,
         messages: [{ role: "user", content: "q" }],
       }, "anthropic");
-      expect(out.max_tokens).toBe(64000);
+      expect(out.max_tokens).toBe(120000);
     });
 
     // Lifted ceiling for a 128k model: a large client max_tokens is now allowed

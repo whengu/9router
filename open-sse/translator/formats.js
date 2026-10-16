@@ -15,6 +15,25 @@ export const FORMATS = {
   COMMANDCODE: "commandcode"
 };
 
+// Map a target wire-format to its native thinking format. Used when a provider
+// declares no thinking shape of its own: the wire format then decides, and the
+// client's parameters are translated into that shape with their values intact
+// (design: docs/tasks/thinking-param-respect). Lives here (a leaf module) so
+// both the translator and the UI level picker can share it without a cycle.
+export const FORMAT_TO_NATIVE = {
+  openai: "openai",
+  "openai-responses": "openai",
+  "openai-response": "openai",
+  codex: "openai",
+  claude: "claude-budget",
+  gemini: "gemini-budget",
+  "gemini-cli": "gemini-budget",
+  vertex: "gemini-budget",
+  antigravity: "gemini-budget",
+  kiro: "kiro",
+  commandcode: "commandcode",
+};
+
 /**
  * Detect source format from request URL pathname + body.
  * Returns null to fall back to body-based detection.

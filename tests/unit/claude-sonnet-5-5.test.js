@@ -62,13 +62,6 @@ describe("Claude Sonnet 5.5 request shape", () => {
     expect(out.tool_choice).toEqual({ type: "auto" });
   });
 
-  it("covers the OpenAI-client path end to end", () => {
-    const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-sonnet-5-5", {
-      model: "claude-sonnet-5-5", reasoning_effort: "none", tool_choice: "required",
-      tools: [{ type: "function", function: { name: "run", parameters: { type: "object", properties: {} } } }],
-      messages: [{ role: "user", content: "hi" }],
-    }, true, null, "claude");
-    expect(out.thinking).toEqual({ type: "between_tools" });
-    expect(out.tool_choice.type).toBe("auto");
-  });
+  // "covers the OpenAI-client path end to end" asserted the deleted translation
+  // layer (client reasoning_effort → claude thinking shape); removed with it (D10).
 });

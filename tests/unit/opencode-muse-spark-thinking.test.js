@@ -23,10 +23,12 @@ describe("OpenCode Free Muse Spark thinking", () => {
     for (const m of [MODEL, "muse-spark-1.3-contributor-free", "muse-spark-1.4-contributor-free", "muse-spark-2.0-contributor-free"]) {
       expect(getCapabilitiesForModel(PROVIDER, m)).toMatchObject({
         reasoning: true,
-        thinkingFormat: "openai",
         contextWindow: 1048576,
         maxOutput: 131072,
       });
+      // The thinking wire shape is not declared for this provider/model pair, so
+      // the model-name table must not supply one (I2); the target wire decides.
+      expect(getCapabilitiesForModel(PROVIDER, m).thinkingFormat).toBeNull();
       expect(getCapabilitiesForModel(PROVIDER, `oc/${m}`)).toMatchObject({
         reasoning: true,
         contextWindow: 1048576,
@@ -46,7 +48,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
     }
   });
 
-  it("clamps max to xhigh and emits the Responses reasoning shape", () => {
+  it("forwards max verbatim and emits the Responses reasoning shape", () => {
     const body = {
       input,
       reasoning: { effort: "max" },
@@ -57,7 +59,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
       connectionId: "opencode-muse-spark-test",
     });
 
-    expect(out.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
+    expect(out.reasoning).toEqual({ effort: "max", summary: "auto" });
     expect(out.reasoning_effort).toBeUndefined();
     expect(out.max_output_tokens).toBe(131072);
     expect(out.max_tokens).toBeUndefined();
@@ -126,7 +128,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
       connectionId: "opencode-muse-spark-translation-test",
     });
 
-    expect(out.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
+    expect(out.reasoning).toEqual({ effort: "max", summary: "auto" });
     expect(out.max_output_tokens).toBe(131072);
     expect(out.max_tokens).toBeUndefined();
   });

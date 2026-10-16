@@ -11,6 +11,8 @@ const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Next.js 16 dev 默认生成 AGENTS.md for AI agents，禁用（本地私有部署不需要）
+  agentRules: false,
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   // `open` must stay external. It derives its own directory from `import.meta.url`, and
@@ -43,7 +45,7 @@ const nextConfig = {
     // Tree-shake heavy barrel imports to cut compile + bundle size
     optimizePackageImports: ["@xyflow/react", "@dnd-kit/core", "@dnd-kit/sortable", "material-symbols", "marked"],
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {
       config.resolve.fallback = {
@@ -52,12 +54,23 @@ const nextConfig = {
         path: false,
       };
     }
-    // Exclude non-source dirs from watcher to reduce inotify load
-    config.watchOptions = {
-      ...config.watchOptions,
-      aggregateTimeout: 300,
-      ignored: /[\\/](node_modules|\.git|logs|\.next|\.next-cli-build|gitbook|cli|open-sse\.old|tests|docs)[\\/]/,
-    };
+    if (dev) {
+      // D11（用户指令）：开发环境关闭热加载/热重编译——改代码不得影响正在运行的服务。
+      // watcher 忽略全部源文件：进程启动时编译一次，之后代码变更只有手动重启才生效。
+      // 只在 webpack 模式下有效，因此 dev 脚本带 --webpack（Turbopack 没有 watch 开关）。
+      config.watchOptions = {
+        ...config.watchOptions,
+        aggregateTimeout: 300,
+        ignored: ["**/*"],
+      };
+    } else {
+      // Exclude non-source dirs from watcher to reduce inotify load
+      config.watchOptions = {
+        ...config.watchOptions,
+        aggregateTimeout: 300,
+        ignored: /[\\/](node_modules|\.git|logs|\.next|\.next-cli-build|gitbook|cli|open-sse\.old|tests|docs)[\\/]/,
+      };
+    }
     return config;
   },
   async rewrites() {

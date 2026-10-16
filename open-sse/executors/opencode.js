@@ -2,7 +2,6 @@ import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
-import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
@@ -296,7 +295,7 @@ function sanitizeResponsesItems(body) {
   });
 }
 
-function normalizeOpencodeReasoning(model, body) {
+function normalizeOpencodeReasoning(body) {
   const current = body.reasoning;
   const currentReasoning = current && typeof current === "object" && !Array.isArray(current)
     ? current
@@ -306,13 +305,10 @@ function normalizeOpencodeReasoning(model, body) {
     : currentReasoning?.effort;
   if (typeof requestedEffort !== "string") return;
 
-  const cleanModel = baseModelId(model || body.model);
-  const supportedLevels = getThinkingLevels("opencode", cleanModel);
-  let effort = requestedEffort.toLowerCase().trim();
-  if ((effort === "max" || effort === "ultra") && supportedLevels?.length && !supportedLevels.includes(effort)) {
-    if (effort === "ultra" && supportedLevels.includes("max")) effort = "max";
-    else if (supportedLevels.includes("xhigh")) effort = "xhigh";
-  }
+  // The effort is forwarded verbatim: a model-name level table is not authority
+  // over what this vendor accepts, and a client's value is never silently
+  // downgraded (I1/I6). An upstream rejection reaches the client (I4).
+  const effort = requestedEffort.toLowerCase().trim();
 
   body.reasoning = { ...currentReasoning, effort };
   if (!body.reasoning.summary) body.reasoning.summary = "auto";
@@ -358,7 +354,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       }
       delete body.max_tokens;
       delete body.max_completion_tokens;
-      normalizeOpencodeReasoning(model, body);
+      normalizeOpencodeReasoning(body);
       body.stream = true;
       body.store = false;
       normalizeResponsesTools(body);

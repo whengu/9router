@@ -3,19 +3,22 @@ import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.j
 
 describe("getCapabilitiesForModel", () => {
 
-  it("reports DeepSeek V4.1-Flash ids as vision-capable without dropping their thinking/context", () => {
-    const v41 = { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 };
+  it("reports DeepSeek V4.1-Flash ids as vision-capable without dropping their context", () => {
+    const v41 = { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 384000 };
     expect(getCapabilitiesForModel(undefined, "deepseek-v4.1-flash")).toMatchObject(v41);
     expect(getCapabilitiesForModel("opencode-go", "deepseek-v4.1-flash")).toMatchObject(v41);
     expect(getCapabilitiesForModel("openrouter", "deepseek/deepseek-v4.1-flash")).toMatchObject(v41);
+    // Thinking wire shape is provider-scoped (I2): the deepseek vendor declares
+    // it; a model-name-only lookup resolves none.
+    expect(getCapabilitiesForModel("deepseek", "deepseek-v4.1-flash").thinkingFormat).toBe("deepseek");
+    expect(getCapabilitiesForModel(undefined, "deepseek-v4.1-flash").thinkingFormat).toBeNull();
     // "deepseek-flash" is the GA id for V4.1-Flash on the DeepSeek API; the pattern it
-    // used to fall through to gives it 128K/64K, which the exact entry keeps.
+    // used to fall through to gives it 128K, which the exact entry keeps.
     expect(getCapabilitiesForModel("opencode-go", "deepseek-flash")).toMatchObject({
       vision: true,
       reasoning: true,
-      thinkingFormat: "deepseek",
       contextWindow: 128000,
-      maxOutput: 64000,
+      maxOutput: 120000,
     });
     // the superseded text-only Flash id stays text-only
     expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash").vision).toBe(false);
@@ -116,26 +119,27 @@ describe("getCapabilitiesForModel", () => {
 });
 
 describe("getCapabilitiesForModel — MiMo (<think>-tag reasoning, always-on)", () => {
-  it("mimo-v2.5 has vision + reasoning + deepseek format, cannot disable", () => {
+  it("mimo-v2.5 has vision + reasoning from the pattern; the wire shape is provider-scoped", () => {
     const caps = getCapabilitiesForModel(null, "mimo-v2.5");
     expect(caps.vision).toBe(true);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingFormat).toBe("deepseek");
-    expect(caps.thinkingCanDisable).toBe(false);
+    // A model-name glob no longer decides the thinking wire format (I2) — the
+    // vendor that fronts the API declares it.
+    expect(caps.thinkingFormat).toBeNull();
+    expect(getCapabilitiesForModel("xiaomi-mimo", "mimo-v2.5").thinkingFormat).toBe("deepseek");
   });
 
   it("mimo-v2.5-pro has vision (matches *mimo*v2.5* pattern)", () => {
     const caps = getCapabilitiesForModel(null, "mimo-v2.5-pro");
     expect(caps.vision).toBe(true);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingFormat).toBe("deepseek");
-    expect(caps.thinkingCanDisable).toBe(false);
+    expect(caps.thinkingFormat).toBeNull();
   });
 
   it("xiaomi/mimo-v2.5-pro (vendor-prefixed) has vision", () => {
     const caps = getCapabilitiesForModel(null, "xiaomi/mimo-v2.5-pro");
     expect(caps.vision).toBe(true);
-    expect(caps.thinkingFormat).toBe("deepseek");
+    expect(caps.thinkingFormat).toBeNull();
   });
 
   it("mimo-omni-x has audioInput via the omni pattern", () => {
@@ -143,14 +147,12 @@ describe("getCapabilitiesForModel — MiMo (<think>-tag reasoning, always-on)", 
     expect(caps.vision).toBe(true);
     expect(caps.audioInput).toBe(true);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingCanDisable).toBe(false);
   });
 
   it("generic mimo has vision + reasoning (fallback pattern)", () => {
     const caps = getCapabilitiesForModel(null, "mimo");
     expect(caps.vision).toBe(true);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingCanDisable).toBe(false);
   });
 });
 
@@ -180,7 +182,10 @@ describe("getCapabilitiesForModel — Qwen max/plus vision", () => {
     const caps = getCapabilitiesForModel(null, "qwq-32b");
     expect(caps.vision).toBe(false);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingCanDisable).toBe(false);
+    // No vendor declared a shape for this id → the client's value is forwarded
+    // untouched; thinkingCanDisable stays at its permissive default.
+    expect(caps.thinkingFormat).toBeNull();
+    expect(caps.thinkingCanDisable).toBe(true);
   });
 });
 
@@ -188,13 +193,13 @@ describe("getCapabilitiesForModel — MiniMax M2.x vision", () => {
   it("minimax-m2.7 has vision", () => {
     const caps = getCapabilitiesForModel(null, "minimax-m2.7");
     expect(caps.vision).toBe(true);
-    expect(caps.thinkingCanDisable).toBe(false);
+    expect(getCapabilitiesForModel("minimax", "minimax-m2.7").thinkingFormat).toBe("minimax");
   });
 
   it("minimax-m2.5 has vision", () => {
     const caps = getCapabilitiesForModel(null, "minimax-m2.5");
     expect(caps.vision).toBe(true);
-    expect(caps.thinkingCanDisable).toBe(false);
+    expect(getCapabilitiesForModel("minimax-cn", "minimax-m2.5").thinkingFormat).toBe("minimax");
   });
 
   it("MiniMax-M2.7 has vision (vendor prefix MiniMaxAI/ stripped by route)", () => {
@@ -213,7 +218,9 @@ describe("getCapabilitiesForModel — DeepSeek V4 text-only", () => {
     const caps = getCapabilitiesForModel(null, "deepseek-v4-pro");
     expect(caps.vision).toBe(false);
     expect(caps.reasoning).toBe(true);
-    expect(caps.thinkingFormat).toBe("deepseek");
+    // Shape comes from the deepseek vendor entry, never from the model id (I2).
+    expect(caps.thinkingFormat).toBeNull();
+    expect(getCapabilitiesForModel("deepseek", "deepseek-v4-pro").thinkingFormat).toBe("deepseek");
   });
 
   it("deepseek-v4-flash has no vision", () => {
@@ -244,10 +251,11 @@ describe("getCapabilitiesForModel — codebuddy-cn provider overrides", () => {
     expect(caps.thinkingCanDisable).toBe(false);
   });
 
-  it("unknown provider falls through to pattern matching", () => {
+  it("unknown provider resolves no thinking shape from the model id (I2)", () => {
     const caps = getCapabilitiesForModel("unknown-provider", "mimo-v2.5");
     expect(caps.vision).toBe(true);
-    expect(caps.thinkingFormat).toBe("deepseek");
+    expect(caps.reasoning).toBe(true);
+    expect(caps.thinkingFormat).toBeNull();
   });
 
   it("opencode-go claude-haiku-5-5 uses adaptive thinking, other haiku ids stay budget", () => {
@@ -292,13 +300,13 @@ describe("getCapabilitiesForModel — codebuddy-cn provider overrides", () => {
 });
 
 describe("OpenCode Free ids newer than the capability tables", () => {
-  // ids missing here fall through to DEFAULT_CAPABILITIES (reasoning: false),
-  // and applyThinking() then deletes the client's reasoning_effort — see #2690.
+  // The reasoning badge here is display-only metadata (UI picker); the outbound
+  // body no longer depends on it — applyThinking() never deletes client params
+  // based on capabilities (#2690 is fixed by the provider-scoped redesign).
   // Modalities/limits are taken verbatim from models.dev.
   it("reports reasoning and the models.dev limits for space-bunny", () => {
     expect(getCapabilitiesForModel(undefined, "space-bunny-free")).toMatchObject({
       reasoning: true,
-      thinkingFormat: "openai",
       contextWindow: 1048576,
       maxOutput: 524288,
     });

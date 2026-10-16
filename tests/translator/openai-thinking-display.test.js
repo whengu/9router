@@ -27,11 +27,9 @@ const chat = (extra = {}) => ({ model: MODEL, messages: [{ role: "user", content
 const responses = (extra = {}) => ({ model: MODEL, input: [{ role: "user", content: "Is 391 prime?" }], ...extra });
 
 describe("Chat Completions clients", () => {
-  it("reasoning_effort asks Claude for summarized thinking and drops redact-thinking", () => {
-    const out = toClaude(FORMATS.OPENAI, chat({ reasoning_effort: "high" }));
-    expect(out.thinking.display).toBe("summarized");
-    expect(selectAnthropicBeta(MODEL, out)).not.toContain(REDACT);
-  });
+  // "reasoning_effort asks Claude for summarized thinking…" covered the deleted
+  // translation layer (display injection derived from the client's effort);
+  // client fields now pass through verbatim (D10).
 
   it("reasoning_effort none leaves thinking off and keeps redact-thinking", () => {
     const out = toClaude(FORMATS.OPENAI, chat({ reasoning_effort: "none" }));
@@ -47,11 +45,8 @@ describe("Chat Completions clients", () => {
 });
 
 describe("Responses API clients", () => {
-  it("reasoning.summary asks Claude for summarized thinking", () => {
-    const out = toClaude(FORMATS.OPENAI_RESPONSES, responses({ reasoning: { effort: "high", summary: "auto" } }));
-    expect(out.thinking.display).toBe("summarized");
-    expect(selectAnthropicBeta(MODEL, out)).not.toContain(REDACT);
-  });
+  // "reasoning.summary asks Claude for summarized thinking" covered the deleted
+  // display injection (D10).
 
   it("effort without summary keeps thinking text redacted, as OpenAI would", () => {
     const out = toClaude(FORMATS.OPENAI_RESPONSES, responses({ reasoning: { effort: "high" } }));

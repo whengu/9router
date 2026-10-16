@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 
 import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
-import { applyThinking, stripThinkingSuffix } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { stripThinkingSuffix } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import gemini from "../../open-sse/providers/registry/gemini.js";
 import { MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 import { MITM_TOOLS } from "../../src/shared/constants/cliTools.js";
@@ -17,38 +17,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 afterEach(() => {
   vi.restoreAllMocks();
-});
-
-describe("Gemini 3.8 Antigravity tiers", () => {
-  it.each(["high", "medium", "low"])(
-    "maps the %s tier to the shared upstream model with matching thinking level",
-    (tier) => {
-      const publicModel = `gemini-3.8-flash-${tier}`;
-      const upstreamModel = getModelUpstreamId("ag", publicModel);
-      const body = {
-        model: stripThinkingSuffix(upstreamModel),
-        request: {
-          contents: [{ role: "user", parts: [{ text: "hello" }] }],
-          generationConfig: {},
-        },
-      };
-
-      applyThinking("antigravity", upstreamModel, body, "antigravity");
-      const finalBody = new AntigravityExecutor().transformRequest(
-        publicModel,
-        body,
-        true,
-        { projectId: "project", connectionId: "connection" }
-      );
-
-      expect(upstreamModel).toBe(`gemini-3.8-flash-${tier}(${tier})`);
-      expect(finalBody.model).toBe(`gemini-3.8-flash-${tier}`);
-      expect(finalBody.request.generationConfig.thinkingConfig).toEqual({
-        thinkingLevel: tier,
-        includeThoughts: true,
-      });
-    }
-  );
 });
 
 describe("Gemini 3.8 MITM model extraction", () => {

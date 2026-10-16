@@ -4,8 +4,7 @@ import { prepareClaudeRequest, ensureTrailingUserTurn } from "./formats/claude.j
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
 import { restoreToolNames } from "../utils/opencodeFingerprint.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
-import { normalizeThinkingConfig } from "../services/provider.js";
-import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
+import { applyThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
@@ -74,8 +73,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
 
-  // Normalize thinking config: remove if lastMessage is not user
-  normalizeThinkingConfig(result);
+  // D10: an explicit model(level) suffix is the client's own configuration (I5).
+  // Express it in the CLIENT's own field shape before translation — no vendor
+  // shape, no value conversion. Client-sent thinking fields ride through as-is.
+  applyThinking(sourceFormat, model, result);
 
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);
@@ -87,10 +88,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   if (targetFormat !== FORMATS.KIRO) {
     fixMissingToolResponses(result);
   }
-
-  // Capture thinking intent from the original (pre-translation) body, before any
-  // format conversion strips/renames the fields. Applied after translation.
-  const thinkingIntent = captureThinking(result);
 
   // Capture session id from the original body (envelope still intact, e.g. antigravity request.sessionId)
   const clientSessionId = captureSessionId(result, credentials, connectionId, targetFormat);
@@ -124,17 +121,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         }
       }
     }
-  }
-
-  // Normalize thinking to the target provider-native format (config-driven, capability-aware).
-  // Kiro's GenerateAssistantResponse request does not accept the generic top-level
-  // `thinking` field; its translators map thinking intent to KAS-compatible
-  // systemPrompt/additionalModelRequestFields instead.
-  const kiroThinkingMappedByTranslator =
-    targetFormat === FORMATS.KIRO &&
-    (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.CLAUDE);
-  if (!kiroThinkingMappedByTranslator) {
-    applyThinking(targetFormat, model, result, provider, thinkingIntent);
   }
 
   // Always normalize to clean OpenAI format when target is OpenAI

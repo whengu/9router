@@ -81,7 +81,11 @@ describe("Qoder signed inference transport", () => {
     expect(result.response.ok).toBe(true);
     await result.response.text();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(!!fetchMock.mock.calls[0][1].dispatcher).toBe(useProxy);
+    // The transport Agent is always attached (it carries undici's disabled
+    // headers/body timeouts); when a proxy is configured that same Agent is a
+    // ProxyAgent routed through it — see proxyFetch.getDispatcher.
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBeDefined();
+    if (useProxy) expect(fetchMock.mock.calls[0][1].dispatcher.constructor.name).toBe("ProxyAgent");
   });
 
   it("preserves caller cancellation without replaying the request", async () => {

@@ -229,11 +229,22 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 
 /**
  * Create proxy dispatcher lazily (undici-compatible)
+ *
+ * Disables undici's Agent-level headersTimeout/bodyTimeout (both default to
+ * 300e3 = 5min). undici's h2 branch never refreshes the body timer between
+ * chunks (undici client-h2.js), and the h1 branch only refreshes while the
+ * consumer keeps reading — with downstream backpressure a legitimately active
+ * upstream can therefore be killed at exactly 300s. Long reasoning/agent
+ * streams must not carry a total-duration cap.
+ *
+ * Liveness is enforced by the gateway itself instead: BaseExecutor's connect
+ * timer (TTFT, FETCH_CONNECT_TIMEOUT_MS) and streamHandler's
+ * STREAM_STALL_TIMEOUT_MS (inter-chunk, reset on every upstream chunk).
  */
+const AGENT_TIMEOUT_DISABLED = { headersTimeout: 0, bodyTimeout: 0 };
+
 async function getDispatcher(proxyUrl, insecure = false) {
   const normalized = normalizeProxyUrl(proxyUrl);
-  if (!normalized && !insecure) return null;
-
   const key = `${normalized || "direct"}::${insecure ? "insecure" : "secure"}`;
   if (!proxyDispatchers.has(key)) {
     // Evict oldest entry if max size reached
@@ -243,8 +254,8 @@ async function getDispatcher(proxyUrl, insecure = false) {
     const { Agent, ProxyAgent } = await import("undici");
     const connect = insecure ? { rejectUnauthorized: false } : undefined;
     const dispatcher = normalized
-      ? new ProxyAgent({ uri: normalized, ...(insecure ? { requestTls: connect } : {}) })
-      : new Agent({ connect });
+      ? new ProxyAgent({ uri: normalized, ...AGENT_TIMEOUT_DISABLED, ...(insecure ? { requestTls: connect } : {}) })
+      : new Agent({ ...(connect ? { connect } : {}), ...AGENT_TIMEOUT_DISABLED });
     proxyDispatchers.set(key, dispatcher);
   }
 
@@ -253,8 +264,8 @@ async function getDispatcher(proxyUrl, insecure = false) {
 
 async function fetchWithTlsFallback(url, options, proxyUrl) {
   try {
-    const dispatcher = proxyUrl ? await getDispatcher(proxyUrl) : undefined;
-    return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
+    const dispatcher = await getDispatcher(proxyUrl);
+    return await originalFetch(url, { ...options, dispatcher });
   } catch (err) {
     const isStrictSsl = process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
     if (!isStrictSsl && isTlsCertError(err)) {
@@ -344,7 +355,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders, dispatcher: await getDispatcher(null) });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);

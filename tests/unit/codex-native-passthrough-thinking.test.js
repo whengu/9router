@@ -90,14 +90,14 @@ describe("native Codex passthrough thinking suffixes", () => {
     expect(body.reasoning).toEqual({ effort: "ultra" });
   });
 
-  it("converts unsupported Luna Ultra to Max without dropping reasoning metadata", async () => {
+  it("forwards Luna Ultra verbatim with its reasoning metadata (upstream validates it)", async () => {
     const body = await runNativeCodexRequest("gpt-5.6-luna(ultra)", {
       effort: "low",
       summary: "detailed",
     });
 
     expect(body.model).toBe("gpt-5.6-luna");
-    expect(body.reasoning).toEqual({ effort: "max", summary: "detailed" });
+    expect(body.reasoning).toEqual({ effort: "ultra", summary: "detailed" });
   });
 
   it("forwards Ultra through a Terra review alias", async () => {

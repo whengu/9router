@@ -24,7 +24,9 @@ describe("Gemini 3.8 Flash Support & Config", () => {
     expect(caps.reasoning).toBe(true);
     expect(caps.thinkingFormat).toBe("gemini-level");
     expect(caps.contextWindow).toBe(1048576);
-    expect(caps.maxOutput).toBe(65536);
+    // Local decision (this task, D9): maxOutput raised to 120000 for the
+    // gemini-3.x line; upstream's table says 65536.
+    expect(caps.maxOutput).toBe(120000);
   });
 
   it("defines pricing matching gemini-3.7-flash baseline", () => {
