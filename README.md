@@ -1,296 +1,59 @@
-<!-- FORK NOTICE — must stay at the very top of this file -->
-# 🍎 Fork: whengu/9router — "Client Is Authoritative"
+<!-- FORK NOTICE — keep at the very top -->
+# 🍎 Personal fork: whengu/9router
 
-> **This is a personal fork of [decolua/9router](https://github.com/decolua/9router) (MIT).**
-> Upstream: `decolua/9router` · This fork: **[whengu/9router](https://github.com/whengu/9router)**
-> If you want the original product, use upstream. This document describes what
-> differs in this fork and the design position behind it.
+Fork of **[decolua/9router](https://github.com/decolua/9router)** (MIT).
 
-## Rationale
+## 一句话 / In one line
 
-The upstream gateway performs **server-side normalization of thinking / reasoning
-parameters**. It maintains per-model capability tables and, on each request, may
-translate, clamp, quantize, or remove the parameters a client sent:
+**网关是搬运工，不是爹。用户知道自己在干什么，网关要做的只是尊重用户的决定、把请求转发出去。**
 
-- Model ID not in the table → a client's `reasoning_effort: "max"` is removed and
-  the request proceeds without a reasoning setting;
-- `max` → clamped to a lower level according to the model table;
-- `model(high)` suffix → removed, or rewritten into a vendor-shaped field;
-- Client sends nothing → the gateway injects its own thinking default.
+**A gateway is a mover, not a parent. The user knows what they are doing — the
+gateway's only job is to respect that decision and forward the request.**
 
-This fork takes a different design position:
+## 上游做了什么 / What upstream does
 
-1. **Thinking support is a property of the vendor / deployment, not of a model ID.**
-   Whether an endpoint accepts `reasoning_effort`, a budget, or a thinking object
-   cannot be reliably derived from the model name; any such table will be wrong for
-   some deployment, and a wrong table silently changes user requests.
-2. **Silent rewriting is an observability problem.** When the gateway adjusts a
-   client's parameter, the operator cannot tell what was actually sent upstream,
-   and an upstream rejection caused by a *rewritten* value is harder to diagnose
-   than one caused by the original value.
-3. **The gateway is not the configuration owner.** The client already expresses its
-   intent; duplicating that logic server-side creates a second, divergent source of
-   truth.
+你的请求就是包裹。上游网关偏要当"爹"，投递前先拆开、按自己的表改一遍：
 
-## Design principle: Client Is Authoritative (至高原则)
+- 你说 `reasoning_effort: "max"` → 模型 ID 不在它的表里，这张纸条被**扔掉**
+- 你说 `max` → 被改成 `high`（它的表认为这样"更好"）
+- 你说 `model(high)` → 后缀被**删掉**，或换成你没写过的厂商格式
+- 你什么都没说 → 它**塞进**一张自己写的思考设置
 
-> **以客户端为准：网关必须原样透传客户端的思考参数，不允许做任何翻译 / 转换 / 改写
-> ——包括跨 wire 格式的形状转换、单位换算、档位量化、默认值注入、能力表门控。
-> 客户端没说的，网关不说；客户端说了的，网关原样说。**
->
-> *The client is authoritative: the gateway passes thinking parameters through
-> verbatim. No translation, no conversion, no rewriting — no cross-wire shape
-> conversion, no unit conversion, no level quantization, no default injection, no
-> capability-table gating. What the client does not send, the gateway does not send;
-> what the client sends, the gateway sends as-is.*
+Your request is the package. Upstream plays the parent: it opens the package and
+rewrites it by its own table — drops your `reasoning_effort` on unknown models,
+clamps `max` to `high`, deletes or rewrites your `model(high)` suffix, and injects
+its own thinking default when you sent none.
 
-1. **Passthrough, not translation.** Outbound thinking fields equal inbound fields —
-   name, nesting, and value. `reasoning_effort: "max"` leaves the gateway as
-   `reasoning_effort: "max"`; numbers remain numbers, levels remain levels.
-2. **No model-ID hardcoding.** No per-model capability tables for thinking; no
-   clamping; no quantization; no vendor-shaped fields introduced by the gateway.
-3. **Silence stays silence.** If the client sends no thinking parameter, the gateway
-   sends none — no defaults, no injection.
-4. **Explicit configuration is preserved.** A `model(level)` suffix is client
-   configuration: it is written back in the client's own field shape, value unchanged.
-5. **Upstream errors surface unchanged.** If the upstream rejects a parameter, the
-   client receives the upstream error verbatim. Misconfiguration is handled by the
-   client that produced it, not silently corrected by the gateway.
+## 本 fork 做什么 / What this fork does
 
-## What changed in this fork
+不拆包、不改字、不替你操心。**思考参数原样送达上游。**
 
-| Area | Upstream | This fork |
+No opening, no rewriting, no worrying on your behalf. Thinking parameters reach
+the upstream exactly as your client sent them.
+
+| | 上游 Upstream | 本 fork This fork |
 |---|---|---|
-| Thinking parameters | normalized by model capability tables | **passed through verbatim** |
-| `reasoning_effort` on an unknown model | removed | **preserved** |
-| Level clamping (`max`→`high`, etc.) | present | **removed** |
-| Level ↔ budget quantization | present | **removed** |
-| Default thinking injection | present | **removed** |
-| Thinking translation layer | ~15 vendor-shape branches | **deleted** |
-| Dev server | hot reload | **hot reload disabled** (edits never affect a running instance) |
+| 思考参数 | 拆包改写 | **原封不动** |
+| 未知模型 ID | `reasoning_effort` 被丢弃 | **保留** |
+| 客户端没传 | 塞入网关默认值 | **什么都不加** |
+| `model(high)` 后缀 | 删除或改写 | **按客户端自己的字段写回** |
+| 开发服务器 | 热加载 | **关闭热加载** |
 
-All other functionality — routing, fallback, token savers, multi-account, dashboard —
-is upstream work and is unchanged.
+## 原则 / Principle
 
-## Practical notes
+> **以客户端为准**：客户端没说的，网关不说；客户端说了的，网关原样说。
 
-- Based on upstream **v0.5.104**; `master` = upstream + this fork's changes only.
-- Sync with upstream: `git fetch upstream && git merge upstream/master`.
-- License: MIT (see [LICENSE](LICENSE)). Upstream copyright is untouched; all
-  credit for the original project goes to [decolua](https://github.com/decolua) and contributors.
+上游拒绝参数时，原样收到上游报错——**你的配置你负责，网关不替你掩盖，也不替你"修正"**。
+If the upstream rejects a parameter, the error reaches you verbatim. Your config,
+your responsibility — the gateway neither hides it nor "corrects" it.
 
----
+其余（路由、回退、省 token、多账号、面板）均为上游成果，未改动。
+Everything else — routing, fallback, token savers, multi-account, dashboard — is upstream work.
 
-# 🍎 Fork 说明：whengu/9router —— “以客户端为准”
-
-> **这是 [decolua/9router](https://github.com/decolua/9router)（MIT 许可）的个人 fork。**
-> 上游：`decolua/9router` · 本 fork：**[whengu/9router](https://github.com/whengu/9router)**
-> 想用原版请使用上游。本文说明本 fork 与上游的差异，以及背后的设计立场。
-
-## 起因
-
-上游网关对**思考 / 推理参数做服务端归一化**：它维护按模型划分的能力表，并在每次请求时对
-客户端发送的参数进行翻译、钳制、量化或删除：
-
-- 模型 ID 不在表中 → 客户端的 `reasoning_effort: "max"` 被移除，请求在不带推理设置的情况下发出；
-- `max` → 按模型表被钳制为更低的档位；
-- `model(high)` 后缀 → 被移除，或被改写为厂商形状的字段；
-- 客户端未发送任何参数 → 网关注入自己的思考默认值。
-
-本 fork 采取不同的设计立场：
-
-1. **思考能力属于厂商 / 部署，而不是模型 ID。** 一个端点是否接受 `reasoning_effort`、
-   budget 或 thinking 对象，无法可靠地从模型名推断；任何此类表都会对某些部署判断错误，
-   而错误的表会静默改变用户请求。
-2. **静默改写是可观测性问题。** 网关调整了客户端的参数时，运维方无法得知实际发给上游的
-   是什么；由*被改写过的值*引起的上游报错，也比由原始值引起的更难排查。
-3. **网关不是配置的所有者。** 客户端已经表达了意图；在服务端重复这套逻辑会形成第二个、
-   并且会与客户端分歧的事实来源。
-
-## 设计原则：以客户端为准（至高原则）
-
-> **以客户端为准：网关必须原样透传客户端的思考参数，不允许做任何翻译 / 转换 / 改写
-> ——包括跨 wire 格式的形状转换、单位换算、档位量化、默认值注入、能力表门控。
-> 客户端没说的，网关不说；客户端说了的，网关原样说。**
->
-> *The client is authoritative: the gateway passes thinking parameters through
-> verbatim. No translation, no conversion, no rewriting — no cross-wire shape
-> conversion, no unit conversion, no level quantization, no default injection, no
-> capability-table gating.*
-
-1. **透传，不翻译。** 出站思考字段与入站字段逐一相等——字段名、嵌套、值均不变。
-   `reasoning_effort: "max"` 离开网关时仍是 `reasoning_effort: "max"`；数字仍是数字，
-   档位仍是档位。
-2. **不硬编码模型 ID。** 没有针对思考的按模型能力表；没有钳制；没有量化；
-   网关不引入厂商形状字段。
-3. **沉默保持沉默。** 客户端未发送思考参数时，网关也不发送——没有默认值，没有注入。
-4. **显式配置被保留。** `model(level)` 后缀属于客户端配置：按客户端自身的字段形状写回，
-   值不变。
-5. **上游错误原样上抛。** 上游拒绝参数时，客户端原样收到上游错误。配置错误由产生它的
-   客户端处理，网关不静默修正。
-
-## 本 fork 的改动
-
-| 方面 | 上游 | 本 fork |
-|---|---|---|
-| 思考参数 | 按模型能力表归一化 | **原样透传** |
-| 未知模型上的 `reasoning_effort` | 被移除 | **保留** |
-| 档位钳制（`max`→`high` 等） | 有 | **已移除** |
-| 档位 ↔ budget 量化 | 有 | **已移除** |
-| 默认思考注入 | 有 | **已移除** |
-| 思考翻译层 | 约 15 个厂商形状分支 | **已删除** |
-| 开发服务器 | 热加载 | **关闭热加载**（改代码不影响正在运行的实例） |
-
-其余功能——路由、故障回退、省 token、多账号、面板——均为上游成果，未做改动。
-
-## 实用说明
-
-- 基于上游 **v0.5.104**；`master` = 上游 + 本 fork 的改动。
-- 与上游同步：`git fetch upstream && git merge upstream/master`。
-- 许可：MIT（见 [LICENSE](LICENSE)）。上游版权原样保留；原项目的全部功劳属于
-  [decolua](https://github.com/decolua) 及贡献者们。
+- 基于上游 **v0.5.104**；同步：`git fetch upstream && git merge upstream/master`
+- License: MIT (see [LICENSE](LICENSE)). All credit to [decolua](https://github.com/decolua) and contributors.
 
 ---
-
-
-  
-  # 9Router - FREE AI Router & Token Saver
-  
-  **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
-  
-  **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
-  
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
-  [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
-  [![License](https://img.shields.io/github/license/whengu/9router.svg)](https://github.com/whengu/9router/blob/master/LICENSE)
-  [![Fork of decolua/9router](https://img.shields.io/badge/fork%20of-decolua%2F9router-blue)](https://github.com/decolua/9router)
-
-<a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-
-[🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
-
-[🇧🇷 Português (Brasil)](./i18n/README.pt-BR.md) • [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md) • [🇷🇺 Русский](./i18n/README.ru.md) • [🇹🇭 ไทย](./i18n/README.th.md) • [🇮🇷 فارسی](./i18n/README.fa_IR.md) • [🇮🇩 Indonesia](./i18n/README.id-ID.md) • [🇪🇸 Español](./i18n/README.es.md) • [🇫🇷 Français](./i18n/README.fr.md)
-
-</div>
-
----
-
-## 🤔 Why 9Router?
-
-**Stop wasting money, tokens and hitting limits:**
-
-- ❌ Subscription quota expires unused every month
-- ❌ Rate limits stop you mid-coding
-- ❌ Tool outputs (git diff, grep, ls...) burn tokens fast
-- ❌ Expensive APIs ($20-50/month per provider)
-- ❌ Manual switching between providers
-
-**9Router solves this:**
-
-- ✅ **RTK Token Saver** - Auto-compress tool_result content, save 20-40% tokens per request
-- ✅ **Maximize subscriptions** - Track quota, use every bit before reset
-- ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
-- ✅ **Multi-account** - Round-robin between accounts per provider
-- ✅ **Universal** - Works with Claude Code, Codex, Cursor, Cline, any CLI tool
-
----
-
-## 🔄 How It Works
-
-```
-┌─────────────┐
-│  Your CLI   │  (Claude Code, Codex, OpenClaw, Cursor, Cline...)
-│   Tool      │
-└──────┬──────┘
-       │ http://localhost:20128/v1
-       ↓
-┌─────────────────────────────────────────────┐
-│           9Router (Smart Router)            │
-│  • RTK Token Saver (cut tool_result tokens) │
-│  • Format translation (OpenAI ↔ Claude)     │
-│  • Quota tracking                           │
-│  • Auto token refresh                       │
-└──────┬──────────────────────────────────────┘
-       │
-       ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, GitHub Copilot
-       │   ↓ quota exhausted
-       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
-       │   ↓ budget limit
-       └─→ [Tier 3: FREE] Kiro, OpenCode Free, Vertex ($300 credits)
-
-Result: Never stop coding, minimal cost + 20-40% token savings via RTK
-```
-
----
-
-## ⚡ Quick Start
-
-**1. Install globally:**
-
-```bash
-npm install -g 9router
-9router
-```
-
-🎉 Dashboard opens at `http://localhost:20128`
-
-**2. Connect a FREE provider (no signup needed):**
-
-Dashboard → Providers → Connect **Kiro AI** (~50 credits/month free: Claude 4.5 + GLM-5 + MiniMax) or **OpenCode Free** (no auth) → Done!
-
-**3. Use in your CLI tool:**
-
-```
-Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
-  Endpoint: http://localhost:20128/v1
-  API Key: [copy from dashboard]
-  Model: kr/claude-sonnet-4.5
-```
-
-**That's it!** Start coding with FREE AI models.
-
-**Alternative: run from source (this repository):**
-
-This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
-
-```bash
-cp .env.example .env
-npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
-```
-
-Production mode:
-
-```bash
-# Create Temporary Memory For Build
-sudo fallocate -l 2G /swapfile_temp
-sudo chmod 600 /swapfile_temp
-sudo mkswap /swapfile_temp
-sudo swapon /swapfile_temp
-
-export MAKEFLAGS="-j1"
-export DLIB_NO_GUI_SUPPORT=1
-export CFLAGS="-mno-avx"
-
-npm run build
-
-# Clear temporary swap
-sudo swapoff /swapfile_temp
-sudo rm /swapfile_temp
-
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
-```
-
-Default URLs:
-
-- Dashboard: `http://localhost:20128/dashboard`
-- OpenAI-compatible API: `http://localhost:20128/v1`
-
----
-
-## Video Guides
 
 <div align="center">
 
@@ -1696,7 +1459,7 @@ Thanks to all contributors who helped make 9Router better!
 
 ## 🔀 Forks
 
-**[whengu/9router](https://github.com/whengu/9router)** — This fork. "Client Is Authoritative": deletes the thinking translation layer so client thinking/reasoning parameters pass through verbatim; no model-ID hardcoding, no clamps, no defaults. See [Fork notice](#-fork-whengu9router--client-is-authoritative) at the top.
+**[whengu/9router](https://github.com/whengu/9router)** — This fork. A gateway is a mover, not a parent: thinking parameters pass through verbatim — no translation, no clamps, no injected defaults. See the [fork notice](#-personal-fork-whengu9router) at the top.
 
 **[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
 
