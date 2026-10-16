@@ -1,5 +1,158 @@
-<div align="center">
-  <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
+<!-- FORK NOTICE — must stay at the very top of this file -->
+# 🍎 Fork: whengu/9router — "Client Is Authoritative"
+
+> **This is a personal fork of [decolua/9router](https://github.com/decolua/9router) (MIT).**
+> Upstream: `decolua/9router` · This fork: **[whengu/9router](https://github.com/whengu/9router)**
+> If you want the original product, use upstream. This document describes what
+> differs in this fork and the design position behind it.
+
+## Rationale
+
+The upstream gateway performs **server-side normalization of thinking / reasoning
+parameters**. It maintains per-model capability tables and, on each request, may
+translate, clamp, quantize, or remove the parameters a client sent:
+
+- Model ID not in the table → a client's `reasoning_effort: "max"` is removed and
+  the request proceeds without a reasoning setting;
+- `max` → clamped to a lower level according to the model table;
+- `model(high)` suffix → removed, or rewritten into a vendor-shaped field;
+- Client sends nothing → the gateway injects its own thinking default.
+
+This fork takes a different design position:
+
+1. **Thinking support is a property of the vendor / deployment, not of a model ID.**
+   Whether an endpoint accepts `reasoning_effort`, a budget, or a thinking object
+   cannot be reliably derived from the model name; any such table will be wrong for
+   some deployment, and a wrong table silently changes user requests.
+2. **Silent rewriting is an observability problem.** When the gateway adjusts a
+   client's parameter, the operator cannot tell what was actually sent upstream,
+   and an upstream rejection caused by a *rewritten* value is harder to diagnose
+   than one caused by the original value.
+3. **The gateway is not the configuration owner.** The client already expresses its
+   intent; duplicating that logic server-side creates a second, divergent source of
+   truth.
+
+## Design principle: Client Is Authoritative (至高原则)
+
+> **以客户端为准：网关必须原样透传客户端的思考参数，不允许做任何翻译 / 转换 / 改写
+> ——包括跨 wire 格式的形状转换、单位换算、档位量化、默认值注入、能力表门控。
+> 客户端没说的，网关不说；客户端说了的，网关原样说。**
+>
+> *The client is authoritative: the gateway passes thinking parameters through
+> verbatim. No translation, no conversion, no rewriting — no cross-wire shape
+> conversion, no unit conversion, no level quantization, no default injection, no
+> capability-table gating. What the client does not send, the gateway does not send;
+> what the client sends, the gateway sends as-is.*
+
+1. **Passthrough, not translation.** Outbound thinking fields equal inbound fields —
+   name, nesting, and value. `reasoning_effort: "max"` leaves the gateway as
+   `reasoning_effort: "max"`; numbers remain numbers, levels remain levels.
+2. **No model-ID hardcoding.** No per-model capability tables for thinking; no
+   clamping; no quantization; no vendor-shaped fields introduced by the gateway.
+3. **Silence stays silence.** If the client sends no thinking parameter, the gateway
+   sends none — no defaults, no injection.
+4. **Explicit configuration is preserved.** A `model(level)` suffix is client
+   configuration: it is written back in the client's own field shape, value unchanged.
+5. **Upstream errors surface unchanged.** If the upstream rejects a parameter, the
+   client receives the upstream error verbatim. Misconfiguration is handled by the
+   client that produced it, not silently corrected by the gateway.
+
+## What changed in this fork
+
+| Area | Upstream | This fork |
+|---|---|---|
+| Thinking parameters | normalized by model capability tables | **passed through verbatim** |
+| `reasoning_effort` on an unknown model | removed | **preserved** |
+| Level clamping (`max`→`high`, etc.) | present | **removed** |
+| Level ↔ budget quantization | present | **removed** |
+| Default thinking injection | present | **removed** |
+| Thinking translation layer | ~15 vendor-shape branches | **deleted** |
+| Dev server | hot reload | **hot reload disabled** (edits never affect a running instance) |
+
+All other functionality — routing, fallback, token savers, multi-account, dashboard —
+is upstream work and is unchanged.
+
+## Practical notes
+
+- Based on upstream **v0.5.104**; `master` = upstream + this fork's changes only.
+- Sync with upstream: `git fetch upstream && git merge upstream/master`.
+- License: MIT (see [LICENSE](LICENSE)). Upstream copyright is untouched; all
+  credit for the original project goes to [decolua](https://github.com/decolua) and contributors.
+
+---
+
+# 🍎 Fork 说明：whengu/9router —— “以客户端为准”
+
+> **这是 [decolua/9router](https://github.com/decolua/9router)（MIT 许可）的个人 fork。**
+> 上游：`decolua/9router` · 本 fork：**[whengu/9router](https://github.com/whengu/9router)**
+> 想用原版请使用上游。本文说明本 fork 与上游的差异，以及背后的设计立场。
+
+## 起因
+
+上游网关对**思考 / 推理参数做服务端归一化**：它维护按模型划分的能力表，并在每次请求时对
+客户端发送的参数进行翻译、钳制、量化或删除：
+
+- 模型 ID 不在表中 → 客户端的 `reasoning_effort: "max"` 被移除，请求在不带推理设置的情况下发出；
+- `max` → 按模型表被钳制为更低的档位；
+- `model(high)` 后缀 → 被移除，或被改写为厂商形状的字段；
+- 客户端未发送任何参数 → 网关注入自己的思考默认值。
+
+本 fork 采取不同的设计立场：
+
+1. **思考能力属于厂商 / 部署，而不是模型 ID。** 一个端点是否接受 `reasoning_effort`、
+   budget 或 thinking 对象，无法可靠地从模型名推断；任何此类表都会对某些部署判断错误，
+   而错误的表会静默改变用户请求。
+2. **静默改写是可观测性问题。** 网关调整了客户端的参数时，运维方无法得知实际发给上游的
+   是什么；由*被改写过的值*引起的上游报错，也比由原始值引起的更难排查。
+3. **网关不是配置的所有者。** 客户端已经表达了意图；在服务端重复这套逻辑会形成第二个、
+   并且会与客户端分歧的事实来源。
+
+## 设计原则：以客户端为准（至高原则）
+
+> **以客户端为准：网关必须原样透传客户端的思考参数，不允许做任何翻译 / 转换 / 改写
+> ——包括跨 wire 格式的形状转换、单位换算、档位量化、默认值注入、能力表门控。
+> 客户端没说的，网关不说；客户端说了的，网关原样说。**
+>
+> *The client is authoritative: the gateway passes thinking parameters through
+> verbatim. No translation, no conversion, no rewriting — no cross-wire shape
+> conversion, no unit conversion, no level quantization, no default injection, no
+> capability-table gating.*
+
+1. **透传，不翻译。** 出站思考字段与入站字段逐一相等——字段名、嵌套、值均不变。
+   `reasoning_effort: "max"` 离开网关时仍是 `reasoning_effort: "max"`；数字仍是数字，
+   档位仍是档位。
+2. **不硬编码模型 ID。** 没有针对思考的按模型能力表；没有钳制；没有量化；
+   网关不引入厂商形状字段。
+3. **沉默保持沉默。** 客户端未发送思考参数时，网关也不发送——没有默认值，没有注入。
+4. **显式配置被保留。** `model(level)` 后缀属于客户端配置：按客户端自身的字段形状写回，
+   值不变。
+5. **上游错误原样上抛。** 上游拒绝参数时，客户端原样收到上游错误。配置错误由产生它的
+   客户端处理，网关不静默修正。
+
+## 本 fork 的改动
+
+| 方面 | 上游 | 本 fork |
+|---|---|---|
+| 思考参数 | 按模型能力表归一化 | **原样透传** |
+| 未知模型上的 `reasoning_effort` | 被移除 | **保留** |
+| 档位钳制（`max`→`high` 等） | 有 | **已移除** |
+| 档位 ↔ budget 量化 | 有 | **已移除** |
+| 默认思考注入 | 有 | **已移除** |
+| 思考翻译层 | 约 15 个厂商形状分支 | **已删除** |
+| 开发服务器 | 热加载 | **关闭热加载**（改代码不影响正在运行的实例） |
+
+其余功能——路由、故障回退、省 token、多账号、面板——均为上游成果，未做改动。
+
+## 实用说明
+
+- 基于上游 **v0.5.104**；`master` = 上游 + 本 fork 的改动。
+- 与上游同步：`git fetch upstream && git merge upstream/master`。
+- 许可：MIT（见 [LICENSE](LICENSE)）。上游版权原样保留；原项目的全部功劳属于
+  [decolua](https://github.com/decolua) 及贡献者们。
+
+---
+
+
   
   # 9Router - FREE AI Router & Token Saver
   
@@ -11,7 +164,8 @@
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
   [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
   [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![License](https://img.shields.io/github/license/whengu/9router.svg)](https://github.com/whengu/9router/blob/master/LICENSE)
+  [![Fork of decolua/9router](https://img.shields.io/badge/fork%20of-decolua%2F9router-blue)](https://github.com/decolua/9router)
 
 <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -1518,9 +1672,13 @@ Authorization: Bearer your-api-key
 
 ## 📧 Support
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Website**: [9router.com](https://9router.com) (upstream project)
+- **Upstream GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
+- **Upstream Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+
+> For this fork specifically: [whengu/9router](https://github.com/whengu/9router).
+> Please report upstream-product issues upstream, and fork-specific issues (thinking
+> passthrough, hot-reload-disabled dev mode) on the fork.
 
 ---
 
@@ -1537,6 +1695,8 @@ Thanks to all contributors who helped make 9Router better!
 [![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
 
 ## 🔀 Forks
+
+**[whengu/9router](https://github.com/whengu/9router)** — This fork. "Client Is Authoritative": deletes the thinking translation layer so client thinking/reasoning parameters pass through verbatim; no model-ID hardcoding, no clamps, no defaults. See [Fork notice](#-fork-whengu9router--client-is-authoritative) at the top.
 
 **[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
 
